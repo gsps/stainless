@@ -13,7 +13,7 @@ object RustgenReport {
 
   sealed abstract class Status
   case class UnsupportedFeature(error: String) extends Status
-  case class Translated(rustUnit: String) extends Status
+  case class Translated(rustTreeString: String) extends Status
 
   implicit val statusDecoder: Decoder[Status] = deriveDecoder
   implicit val statusEncoder: Encoder[Status] = deriveEncoder

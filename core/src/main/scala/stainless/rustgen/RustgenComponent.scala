@@ -3,6 +3,8 @@
 package stainless
 package rustgen
 
+import builder.rust.{Tree => RustTree}
+
 import io.circe._
 
 import scala.concurrent.Future
@@ -37,11 +39,11 @@ object RustgenComponent extends Component { self =>
 object RustgenRun {
   import stainless.trees._
 
-  sealed abstract class FunctionStatus
-  case class Translated(rustUnit: String) extends FunctionStatus
-  case class UnsupportedFeature(error: String) extends FunctionStatus
+  sealed abstract class TranslationStatus
+  case class Translated(rustTree: RustTree) extends TranslationStatus
+  case class UnsupportedFeature(error: String) extends TranslationStatus
 
-  case class Result(fd: FunDef, status: FunctionStatus, time: Long)
+  case class Result(defn: Definition, status: TranslationStatus, time: Long)
 }
 
 class RustgenRun(override val pipeline: extraction.StainlessPipeline)
@@ -67,23 +69,23 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
     import p.{symbols => _, _}
 
     // Build an evaluator once and only if there is something to evaluate
-    lazy val translator: FunDef => Either[String, String] = ???
+    lazy val translator: Definition => Either[String, RustTree] = ???
 
-    // Translate a function
-    def translateFunction(fd: FunDef): FunctionStatus = {
-      val fid = fd.id
+    // Translate a definition
+    def translateDefinition(defn: Definition): TranslationStatus = {
+      val fid = defn.id
       reporter.info(s"Translating ${fid}")
 
-      val status = translator(fd) match {
+      val status = translator(defn) match {
         case Left(error) => UnsupportedFeature(error)
-        case Right(rustUnit) => Translated(rustUnit)
+        case Right(rustTree) => Translated(rustTree)
       }
 
-      reporter.info(s"Result for ${fid.asString} @${fd.getPos}:")
+      reporter.info(s"Result for ${fid.asString} @${defn.getPos}:")
 
       status match {
         case UnsupportedFeature(error) => reporter.warning(" => UNSUPPORTED FEATURE")
-        case Translated(rustUnit) => reporter.warning(" => SUCCESSFUL")
+        case Translated(rustTree) => reporter.warning(" => SUCCESSFUL")
       }
 
       val optError = status match {
@@ -94,22 +96,21 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
       optError.foreach(error => reporter.warning(s"  $error"))
 
       val optBody = status match {
-        case Translated(rustUnit) => Some(rustUnit)
+        case Translated(rustTree) => Some(rustTree)
         case _ => None
       }
 
-      optBody.foreach(rustUnit =>
-        reporter.info(s"Function translates to:\n  ${rustUnit.split("\n").mkString("\n  ")}"))
+      optBody.foreach(rustTree =>
+        reporter.info(s"Definition translates to:\n  ${rustTree.show.split("\n").mkString("\n  ")}"))
 
       status
     }
 
-    // Measure how long it takes to determine the function' status
-    def processFunction(fd: FunDef): Result = {
-      val (time, tryStatus) = timers.rustgen.emit.runAndGetTime { translateFunction(fd) }
+    def processDefinition(defn: Definition): Result = {
+      val (time, tryStatus) = timers.rustgen.emit.runAndGetTime { translateDefinition(defn) }
       tryStatus match {
         case Failure(e) => reporter.internalError(e)
-        case Success(status) => Result(fd, status, time)
+        case Success(status) => Result(defn, status, time)
       }
     }
 
@@ -118,7 +119,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
     Future.successful(new RustgenAnalysis {
       override val program = p
       override val sources = functions.toSet
-      override val results = functions map (id => processFunction(symbols.getFunction(id)))
+      override val results = functions map (id => processDefinition(symbols.getFunction(id)))
     })
   }
 }
