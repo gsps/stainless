@@ -3,12 +3,12 @@
 package stainless
 package rustgen
 
-import builder.rust.{Tree => RustTree}
+import generator.rust.{Tree => RustTree}
 
 import io.circe._
 
 import scala.concurrent.Future
-import scala.util.{ Success, Failure }
+import scala.util.{ Try, Success, Failure }
 
 import scala.language.existentials
 
@@ -68,17 +68,18 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
     val p = inox.Program(trees)(symbols)
     import p.{symbols => _, _}
 
-    // Build an evaluator once and only if there is something to evaluate
-    lazy val translator: Definition => Either[String, RustTree] = ???
+    val gen = new generator.Generator
 
     // Translate a definition
     def translateDefinition(defn: Definition): TranslationStatus = {
       val fid = defn.id
       reporter.info(s"Translating ${fid}")
 
-      val status = translator(defn) match {
-        case Left(error) => UnsupportedFeature(error)
-        case Right(rustTree) => Translated(rustTree)
+      val status = Try(gen.translate(defn)) match {
+        case Failure(exc) =>
+          // exc.printStackTrace();
+          UnsupportedFeature(exc.getMessage())
+        case Success(rustTree) => Translated(rustTree)
       }
 
       reporter.info(s"Result for ${fid.asString} @${defn.getPos}:")
@@ -100,8 +101,9 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
         case _ => None
       }
 
-      optBody.foreach(rustTree =>
-        reporter.info(s"Definition translates to:\n  ${rustTree.show.split("\n").mkString("\n  ")}"))
+      // optBody.foreach(rustTree =>
+      //   reporter.info(s"Definition translates to:\n  ${rustTree.show.split("\n").mkString("\n  ")}"))
+      optBody.foreach(rustTree => println(rustTree.show))
 
       status
     }
@@ -114,12 +116,20 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
       }
     }
 
-    reporter.debug(s"Processing ${functions.size} parameterless functions: ${functions mkString ", "}")
+    def shouldIgnoreSort(sort: ADTSort): Boolean = {
+      sort.flags contains Synthetic
+    }
+
+    val sorts = symbols.sorts.values.filterNot(shouldIgnoreSort).map(_.id).toSeq
+    reporter.debug(s"Processing ${sorts.size} sorts: ${sorts mkString ", "}")
+    reporter.debug(s"Processing ${functions.size} functions: ${functions mkString ", "}")
 
     Future.successful(new RustgenAnalysis {
       override val program = p
-      override val sources = functions.toSet
-      override val results = functions map (id => processDefinition(symbols.getFunction(id)))
+      override val sources = sorts.toSet ++ functions.toSet
+      override val results =
+        (sorts map (id => processDefinition(symbols.getSort(id)))) ++
+        (functions map (id => processDefinition(symbols.getFunction(id))))
     })
   }
 }

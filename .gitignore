@@ -75,9 +75,10 @@ out-classes
 /libz3java.dll
 /libz3java.lib
 
-# metals and VSCode
+# metals, bloop and VSCode
 .vscode
 .metals
+.bloop
 
 # ripgrep
 .rgignore

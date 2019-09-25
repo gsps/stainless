@@ -2,18 +2,16 @@
 
 package stainless
 package rustgen
-package builder
+package generator
 
 import scala.collection.mutable.StringBuilder
 
-object DebugSectionRustgenBuilder extends inox.DebugSection("rustgen-builder")
 
-
-class ItemIdentifier private[builder](id: Identifier)
+class ItemIdentifier private[generator](id: Identifier)
   extends inox.Identifier(id.name, id.globalId, id.id, alwaysShowUniqueID = false)
 
 object ItemIdentifier {
-  private[builder] def apply(name: String): ItemIdentifier =
+  private[generator] def apply(name: String): ItemIdentifier =
     new ItemIdentifier(inox.FreshIdentifier(name))
 }
 
@@ -44,8 +42,8 @@ object rust {
   case class Enum(id: Identifier, variants: Seq[EnumVariant]) extends Tree
   case class EnumVariant(id: Identifier, enm: Identifier, fields: Seq[ValDef]) extends Tree
 
-  case class FunDef(id: Identifier, params: Seq[ValDef], resultTp: Type, body: Expr) extends Tree
-  case class ValDef(id: Identifier, tp: Type) extends Tree
+  case class FunDef(id: Identifier, params: Seq[ValDef], resultType: Type, body: Expr) extends Tree
+  case class ValDef(id: Identifier, tpe: Type) extends Tree
 
 
   sealed trait Type extends Tree
@@ -56,7 +54,7 @@ object rust {
   object I32Type extends PrimitiveType { def rustName = "i32" }
   object StrType extends PrimitiveType { def rustName = "str" }
 
-  case class RefType(tp: Type) extends Type
+  case class RefType(tpe: Type) extends Type
   case class EnumType(enm: Enum) extends Type
   case class TupleType(tps: Seq[Type]) extends Type
 
@@ -65,6 +63,8 @@ object rust {
   
   case class Variable(id: Identifier) extends Expr
 
+  case class IntLiteral(value: Int, asType: Type) extends Expr
+
   case class Let(vd: ValDef, value: Expr, body: Expr) extends Expr
   
   case class FunctionInvocation(fun: Identifier, args: Seq[Expr]) extends Expr
@@ -72,7 +72,29 @@ object rust {
   // case class UnaryOperatorInvocation(op: Identifier, arg: Expr) extends Expr
   // case class BinaryOperatorInvocation(op: Identifier, arg1: Expr, arg2: Expr) extends Expr
   
-  case class If(cond: Expr, thene: Expr, elsee: Expr) extends Expr
+  case class IfExpr(cond: Expr, thenn: Expr, elze: Expr) extends Expr
+
+
+  private def op(rustName: String): Identifier = ItemIdentifier(rustName)
+
+  object stdOps {
+    val add = op("add")
+    val div = op("div")
+    val mul = op("mul")
+    val neg = op("neg")
+    val not = op("not")
+    val rem = op("rem")
+    val sub = op("sub")
+  }
+
+  object stdCmp {
+    val lt = op("lt")
+    val le = op("le")
+    val gt = op("gt")
+    val ge = op("ge")
+    val eq = op("eq")
+    val ne = op("ne")  // unused!
+  }
 }
 
 
@@ -83,10 +105,11 @@ class PrinterContext(builder: StringBuilder, val indentLevel: Int) {
   lazy val newline: String = "\n" + indent
   
   def appendSimpleString(string: String): Unit = {
-    builder.append(indent)
+    // builder.append(indent)
     builder.append(string)
   }
   def appendMultiLineString(string: String): Unit = {
+    println("<< " + string.split('\n').mkString(indent, newline, "") + " >>")
     builder.append(string.split('\n').mkString(indent, newline, ""))
   }
 
@@ -141,22 +164,22 @@ object Printer {
   def print(fun: FunDef)(implicit ctx: PrinterContext): Unit = {
     p"""fn ${fun.id}("""
     fun.params.foreach(print)
-    p""") -> ${fun.resultTp} {\n"""
+    p""") -> ${fun.resultType} {\n"""
     print(fun.body)(ctx.inner)
     p"""\n}"""
   }
 
   def print(vd: ValDef)(implicit ctx: PrinterContext): Unit = {
-    p"""${vd.id}: ${vd.tp}"""
+    p"""${vd.id}: ${vd.tpe}"""
   }
 
-  def print(tp: Type)(implicit ctx: PrinterContext): Unit = {
-    tp match {
+  def print(tpe: Type)(implicit ctx: PrinterContext): Unit = {
+    tpe match {
       case BoolType       => p"""bool"""
       case U32Type        => p"""u32"""
       case I32Type        => p"""i32"""
       case StrType        => p"""str"""
-      case RefType(tp)    => p"""&$tp"""
+      case RefType(tpe)   => p"""&$tpe"""
       case EnumType(enm)  => p"""$enm"""
       case TupleType(tps) =>
         p"""("""
@@ -168,6 +191,7 @@ object Printer {
   def print(expr: Expr)(implicit ctx: PrinterContext): Unit = {
     expr match {
       case Variable(id) => p"""$id"""
+      case IntLiteral(value, asType) => p"""(${value.toString} as $asType)"""
       case Let(vd, value, body) =>
         p"""let $vd = $value;\n$body"""
         case FunctionInvocation(fun, args) =>
@@ -178,11 +202,11 @@ object Printer {
         p"""$recv.$method("""
         commaSeparated(args)(print)
         p""")"""
-      case If(cond, thene, elsee) =>
+      case IfExpr(cond, thenn, elze) =>
         p"""if $cond {\n"""
-        print(thene)(ctx.inner)
+        print(thenn)(ctx.inner)
         p"""\n} else {\n"""
-        print(elsee)(ctx.inner)
+        print(elze)(ctx.inner)
         p"""\n}"""
     }
   }
@@ -206,7 +230,7 @@ object Printer {
       implicit ctx: PrinterContext): Unit = {
     var isFirst = true
     for { element <- elements } {
-      if (isFirst)
+      if (!isFirst)
         p"$sep"
       isFirst = false
       f(element)
