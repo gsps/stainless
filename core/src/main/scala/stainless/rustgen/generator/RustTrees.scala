@@ -16,7 +16,7 @@ object ItemIdentifier {
 
 object rust {
   type Identifier = ItemIdentifier
-  val NoIdentifier = ItemIdentifier("<none>")
+  val Identifier = ItemIdentifier
 
   trait Tree {
     def show: String = new Printer().show(this)
@@ -25,16 +25,11 @@ object rust {
   case class Program(modules: Seq[ModuleDef]) extends Tree
 
   case class ModuleDef(
-      name: Identifier, parent: Identifier,
+      name: Identifier, parent: Option[Identifier],
       enums: Seq[Enum], functions: Seq[FunDef]) extends Tree {
-    override def toString: String = 
-      if (parent ne NoIdentifier) s"(...)::$parent::$name" else s"::$name"
+    override def toString: String =
+      parent.map(p => s"(...)::$p::$name").getOrElse(s"::$name")
   }
-  object NoModule extends ModuleDef(null, NoIdentifier, Seq.empty, Seq.empty)
-  
-  // case class QualifiedName(module: Module, name: String) {
-  //   override def toString: String = s"$module::$name"
-  // }
 
   
   case class Enum(id: Identifier, variants: Seq[EnumVariant]) extends Tree
@@ -46,11 +41,12 @@ object rust {
 
   sealed trait Type extends Tree
   
-  sealed trait PrimitiveType extends Type { def rustName: String }
-  object BoolType extends PrimitiveType { def rustName = "bool" }
-  object U32Type extends PrimitiveType { def rustName = "u32" }
-  object I32Type extends PrimitiveType { def rustName = "i32" }
-  object StrType extends PrimitiveType { def rustName = "str" }
+  sealed trait PrimitiveType extends Type
+  object UnitType extends PrimitiveType
+  object BoolType extends PrimitiveType
+  object U32Type extends PrimitiveType
+  object I32Type extends PrimitiveType
+  object StrType extends PrimitiveType
 
   case class RefType(tpe: Type) extends Type
   case class EnumType(enm: Enum) extends Type
@@ -61,7 +57,9 @@ object rust {
   
   case class Variable(id: Identifier) extends Expr
 
+  case class UnitLiteral() extends Expr
   case class IntLiteral(value: Int, asType: Type) extends Expr
+  case class StrLiteral(value: String) extends Expr
 
   case class Let(vd: ValDef, value: Expr, body: Expr) extends Expr
 
@@ -75,7 +73,7 @@ object rust {
   case class IfExpr(cond: Expr, thenn: Expr, elze: Expr) extends Expr
 
 
-  private def op(rustName: String): Identifier = ItemIdentifier(rustName)
+  private def op(rustName: String): Identifier = Identifier(rustName)
 
   object stdOps {
     val add = op("add")

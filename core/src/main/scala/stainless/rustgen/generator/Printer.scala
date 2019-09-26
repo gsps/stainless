@@ -141,6 +141,8 @@ class Printer {
   import Printer._
   import rust._
 
+  private val QUOTE = "\""
+
   def show(tree: Tree): String = {
     print(tree)(PrinterContext(this)).toString
   }
@@ -158,11 +160,14 @@ class Printer {
   }
 
   def print(module: ModuleDef)(implicit ctx: PrinterContext): PrintableChunk = {
-    p"""# Stainless-generated module '${module.name}'
+    p"""// Stainless-generated module '${module.name}'
+#![allow(unused_parens)]
+use std::ops::*;
 
 ${nlSeparated(module.enums.map(print), 2)}
 
-${nlSeparated(module.functions.map(print), 2)}"""
+${nlSeparated(module.functions.map(print), 2)}
+"""
   }
 
   def print(enm: Enum)(implicit ctx: PrinterContext): PrintableChunk = {
@@ -188,6 +193,7 @@ ${print(fun.body)(ctx.inner)}
 
   def print(tpe: Type)(implicit ctx: PrinterContext): PrintableChunk = {
     tpe match {
+      case UnitType       => p"()"
       case BoolType       => p"bool"
       case U32Type        => p"u32"
       case I32Type        => p"i32"
@@ -201,9 +207,14 @@ ${print(fun.body)(ctx.inner)}
   def print(expr: Expr)(implicit ctx: PrinterContext): PrintableChunk = {
     expr match {
       case Variable(id) => p"$id"
+      case UnitLiteral() => p"()"
       case IntLiteral(value, asType) => p"(${value.toString} as $asType)"
+      case StrLiteral(value) => p"$QUOTE$value$QUOTE"
       case Let(vd, value, body) =>
-        p"let $vd = $value;\n$body"
+        p"""let $vd = {
+${print(value)(ctx.inner)}
+};
+$body"""
       case Reference(expr) =>
         p"&($expr)"
       case FunctionInvocation(fun, args) =>

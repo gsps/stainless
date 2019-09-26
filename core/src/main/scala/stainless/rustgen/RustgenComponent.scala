@@ -3,9 +3,13 @@
 package stainless
 package rustgen
 
-import generator.rust.{Tree => RustTree}
+import generator.{rust => rt}
 
 import io.circe._
+
+import java.io.File
+import java.nio.file.{ Files, Paths }
+import java.nio.charset.StandardCharsets
 
 import scala.concurrent.Future
 import scala.util.{ Try, Success, Failure }
@@ -14,8 +18,8 @@ import scala.language.existentials
 
 object DebugSectionRustgen extends inox.DebugSection("rustgen")
 
-// object optRustgenOutDir extends inox.StringOptionDef("rustgen-out-dir",
-//   "", "A directory to output rust sources into.")
+object optRustgenOutDir extends inox.StringOptionDef("rustgen-out-dir",
+  "", "A directory to output rust sources into.")
 
 /**
  * Rustgen Component
@@ -43,7 +47,7 @@ object RustgenRun {
   import stainless.trees._
 
   sealed abstract class TranslationStatus
-  case class Translated(rustTree: RustTree) extends TranslationStatus
+  case class Translated(rustTree: rt.Tree) extends TranslationStatus
   case class UnsupportedFeature(error: String) extends TranslationStatus
 
   case class Result(defn: Definition, status: TranslationStatus, time: Long)
@@ -71,7 +75,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
     val p = inox.Program(trees)(symbols)
     import p.{symbols => _, _}
 
-    val gen = new generator.Generator
+    val gen = new generator.Generator()(context, symbols)
 
     // Translate a definition
     def translateDefinition(defn: Definition): TranslationStatus = {
@@ -79,9 +83,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
       reporter.info(s"Translating ${fid}")
 
       val status = Try(gen.translate(defn)) match {
-        case Failure(exc) =>
-          // exc.printStackTrace();
-          UnsupportedFeature(exc.getMessage())
+        case Failure(exc) => UnsupportedFeature(exc.getMessage())
         case Success(rustTree) => Translated(rustTree)
       }
 
@@ -120,6 +122,18 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
       }
     }
 
+    def outputProgram(outDirPath: String, program: rt.Program): Unit = {
+      val outDir = new File(outDirPath).getAbsoluteFile
+      reporter.info(s"Outputting program to $outDir")
+      outDir.mkdirs()
+      assert(outDir.isDirectory)
+      program.modules.foreach { module =>
+        val moduleFile = new File(outDir, s"${module.name}.rs")
+        val moduleContents = module.show
+        Files.write(moduleFile.toPath, moduleContents.getBytes(StandardCharsets.UTF_8))
+      }
+    }
+
     def shouldIgnoreSort(sort: ADTSort): Boolean = {
       sort.flags contains Synthetic
     }
@@ -127,13 +141,21 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
     val sorts = symbols.sorts.values.filterNot(shouldIgnoreSort).map(_.id).toSeq
     reporter.debug(s"Processing ${sorts.size} sorts: ${sorts mkString ", "}")
     reporter.debug(s"Processing ${functions.size} functions: ${functions mkString ", "}")
+    for (function <- functions) {
+      reporter.debug(s"-- $function: ${symbols.getFunction(function).getPos.fullString}")
+    }
+
+    val enumResults = sorts map (id => processDefinition(symbols.getSort(id)))
+    val functionResults = functions map (id => processDefinition(symbols.getFunction(id)))
+
+    context.options.findOption(optRustgenOutDir) foreach {
+      outputProgram(_, gen.toProgram(symbols))
+    }
 
     Future.successful(new RustgenAnalysis {
       override val program = p
       override val sources = sorts.toSet ++ functions.toSet
-      override val results =
-        (sorts map (id => processDefinition(symbols.getSort(id)))) ++
-        (functions map (id => processDefinition(symbols.getFunction(id))))
+      override val results = enumResults ++ functionResults
     })
   }
 }

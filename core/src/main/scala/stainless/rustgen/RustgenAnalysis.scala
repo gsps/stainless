@@ -14,7 +14,7 @@ trait RustgenAnalysis extends AbstractAnalysis {
   private lazy val records = results map { case Result(fd, status, time) =>
     val textStatus = status match {
       case RustgenRun.UnsupportedFeature(error) => RustgenReport.UnsupportedFeature(error)
-      case RustgenRun.Translated(rustTree) => RustgenReport.Translated(rustTree.show)
+      case RustgenRun.Translated(rustTree) => RustgenReport.Translated()
     }
     Record(fd.id, fd.getPos, textStatus, time)
   }

@@ -20,6 +20,7 @@ trait MainHelpers extends inox.MainHelpers { self =>
   case object Pipelines extends Category
   case object Verification extends Category
   case object Termination extends Category
+  case object Rustgen extends Category
 
   override protected def getOptions: Map[inox.OptionDef[_], Description] = super.getOptions - inox.solvers.optAssumeChecked ++ Map(
     optVersion -> Description(General, "Display the version number"),
@@ -50,7 +51,8 @@ trait MainHelpers extends inox.MainHelpers { self =>
     frontend.optPersistentCache -> Description(General, "Enable caching of program extraction & analysis"),
     frontend.optBatchedProgram -> Description(General, "Process the whole program together, skip dependency analysis"),
     frontend.optKeep -> Description(General, "Keep library objects marked by @keep(g) for some g in g1,g2,... (implies --batched)"),
-    utils.Caches.optCacheDir -> Description(General, "Specify the directory in which cache files should be stored")
+    utils.Caches.optCacheDir -> Description(General, "Specify the directory in which cache files should be stored"),
+    rustgen.optRustgenOutDir -> Description(Rustgen, "Specify the directory in which rustgen output files should be stored"),
   ) ++ MainHelpers.components.map { component =>
     val option = inox.FlagOptionDef(component.name, default = false)
     option -> Description(Pipelines, component.description)

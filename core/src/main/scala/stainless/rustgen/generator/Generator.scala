@@ -4,12 +4,12 @@ package stainless
 package rustgen
 package generator
 
-import scala.collection.mutable.{Map => MutableMap}
+import inox.utils.Bijection
 
 object DebugSectionRustgenGenerator extends inox.DebugSection("rustgen-generator")
 
 
-class Generator(implicit context: inox.Context) {
+class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbols) {
   import stainless.{trees => st}
   import generator.{rust => rt}
 
@@ -21,7 +21,24 @@ class Generator(implicit context: inox.Context) {
   implicit def id2id(id: stainless.Identifier): rt.Identifier =
     new rt.Identifier(id)
 
-  val enumMap: MutableMap[rt.Identifier, rt.Enum] = MutableMap.empty
+  val enumMap: Bijection[rt.Identifier, rt.Enum] = Bijection()
+  val functionMap: Bijection[rt.Identifier, rt.FunDef] = Bijection()
+
+  def toProgram(implicit symbols: stainless.trees.Symbols): rt.Program = {
+    val enums = enumMap.toSeq sortWith { case ((id1, _), (id2, _)) =>
+      val pos1 = symbols.getFunction(id1).getPos
+      val pos2 = symbols.getFunction(id2).getPos
+      (pos1 compare pos2) < 0
+    } map { _._2 }
+    val functions = functionMap.toSeq sortWith { case ((id1, _), (id2, _)) =>
+      val pos1 = symbols.getFunction(id1).getPos
+      val pos2 = symbols.getFunction(id2).getPos
+      (pos1 compare pos2) < 0
+    } map { _._2 }
+    val module = rt.ModuleDef(
+      rt.Identifier("stainlessExport"), None, enums, functions)
+    rt.Program(Seq(module))
+  }
 
   def translate(defn: st.Definition): rt.Tree = {
     defn match {
@@ -33,20 +50,24 @@ class Generator(implicit context: inox.Context) {
   def translate(sort: st.ADTSort): rt.Enum = {
     assert(sort.tparams.isEmpty)
     val enumId: rt.Identifier = sort.id
-    assert(!enumMap.isDefinedAt(enumId))
-    val variants = sort.constructors map { cons =>
-      val fields = cons.fields.map(translate)
-      rt.EnumVariant(cons.id, enumId, fields)
+    enumMap.cachedB(enumId){
+      val variants = sort.constructors map { cons =>
+        val fields = cons.fields.map(translate)
+        rt.EnumVariant(cons.id, enumId, fields)
+      }
+      rt.Enum(sort.id, variants)
     }
-    rt.Enum(sort.id, variants)
   }
 
   def translate(fd: st.FunDef): rt.FunDef = {
     assert(fd.tparams.isEmpty)
-    rt.FunDef(fd.id,
-      fd.params.map(translate),
-      translate(fd.returnType),
-      translate(fd.fullBody))
+    val funId: rt.Identifier = fd.id
+    functionMap.cachedB(funId){
+      rt.FunDef(funId,
+        fd.params.map(translate),
+        translate(fd.returnType),
+        translate(fd.fullBody))
+    }
   }
 
   def translate(vd: st.ValDef): rt.ValDef = {
@@ -55,21 +76,34 @@ class Generator(implicit context: inox.Context) {
 
   def translate(tpe: st.Type): rt.Type = {
     tpe match {
+      case st.UnitType()       => rt.UnitType
       case st.BooleanType()    => rt.BoolType
       case st.Int32Type()      => rt.I32Type
       case st.StringType()     => rt.StrType
-      case st.TupleType(tps)   => rt.TupleType(tps.map(translate))
+      case st.TupleType(tps)   => rt.RefType(rt.TupleType(tps.map(translate)))
       case st.ADTType(id, tps) =>
         assert(tps.isEmpty)
         val enumId: rt.Identifier = id
-        assert(enumMap.isDefinedAt(enumId))
-        rt.EnumType(enumMap(enumId))
+        rt.RefType(rt.EnumType(enumMap.toB(enumId)))
+    }
+  }
+
+  def ensureRef[S <: st.Expr](expr: S)(f: S => rt.Expr): rt.Expr = {
+    val rtexpr = f(expr)
+    translate(expr.getType) match {
+      case rt.RefType(_) => rtexpr
+      case _ => rt.Reference(rtexpr)
     }
   }
 
   def translate(expr: st.Expr): rt.Expr = {
     expr match {
       case st.Variable(id, _, _) => rt.Variable(id)
+
+      case st.UnitLiteral() => rt.UnitLiteral()
+      case st.Int32Literal(value) => rt.IntLiteral(value, rt.I32Type)
+      case st.StringLiteral(value) => rt.StrLiteral(value)
+
       case st.Let(vd, value, body) =>
         rt.Let(translate(vd), translate(value), translate(body))
       case st.FunctionInvocation(id, tps, args) =>
@@ -96,21 +130,20 @@ class Generator(implicit context: inox.Context) {
         // ...
 
         case st.LessThan(lhs, rhs) =>
-          rt.MethodInvocation(rt.stdCmp.lt, translate(lhs), Seq(translate(rhs)))
+          rt.MethodInvocation(rt.stdCmp.lt, translate(lhs), Seq(ensureRef(rhs)(translate)))
         case st.LessEquals(lhs, rhs) =>
-          rt.MethodInvocation(rt.stdCmp.le, translate(lhs), Seq(translate(rhs)))
+          rt.MethodInvocation(rt.stdCmp.le, translate(lhs), Seq(ensureRef(rhs)(translate)))
         case st.GreaterThan(lhs, rhs) =>
-          rt.MethodInvocation(rt.stdCmp.gt, translate(lhs), Seq(translate(rhs)))
+          rt.MethodInvocation(rt.stdCmp.gt, translate(lhs), Seq(ensureRef(rhs)(translate)))
         case st.GreaterEquals(lhs, rhs) =>
-          rt.MethodInvocation(rt.stdCmp.ge, translate(lhs), Seq(translate(rhs)))
+          rt.MethodInvocation(rt.stdCmp.ge, translate(lhs), Seq(ensureRef(rhs)(translate)))
         case st.Equals(lhs, rhs) =>
-          rt.MethodInvocation(rt.stdCmp.eq, translate(lhs), Seq(translate(rhs)))
+          rt.MethodInvocation(rt.stdCmp.eq, translate(lhs), Seq(ensureRef(rhs)(translate)))
 
         case st.IfExpr(cond, thenn, elze) =>
           rt.IfExpr(translate(cond), translate(thenn), translate(elze))
 
-        case st.Int32Literal(value) =>
-          rt.IntLiteral(value, rt.I32Type)
+        case st.Annotated(body, _) => translate(body)
 
         case _ =>
           throw new IllegalArgumentException(s"Unsupported expression '$expr'")

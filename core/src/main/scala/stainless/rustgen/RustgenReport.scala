@@ -13,7 +13,7 @@ object RustgenReport {
 
   sealed abstract class Status
   case class UnsupportedFeature(error: String) extends Status
-  case class Translated(rustTreeString: String) extends Status
+  case class Translated() extends Status
 
   implicit val statusDecoder: Decoder[Status] = deriveDecoder
   implicit val statusEncoder: Encoder[Status] = deriveEncoder
@@ -64,13 +64,13 @@ class RustgenReport(val results: Seq[RustgenReport.Record], val sources: Set[Ide
     ReportStats(results.size, totalTime, totalValid, validFromCache = 0, totalInvalid, unknown = 0)
 
   private def levelOf(status: Status) = status match {
-    case Translated(_) => Level.Normal
+    case Translated() => Level.Normal
     case _ => Level.Error
   }
 
   private def descriptionOf(status: Status): String = status match {
     case UnsupportedFeature(error) => "unsupported feature"
-    case Translated(_) => "successful"
+    case Translated() => "successful"
   }
 }
 
