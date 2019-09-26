@@ -74,6 +74,7 @@ trait MainHelpers extends inox.MainHelpers { self =>
     frontend.DebugSectionExtraction,
     frontend.DebugSectionFrontend,
     frontend.DebugSectionRecovery,
+    rustgen.DebugSectionRustgen,
   )
 
   override protected def displayVersion(reporter: inox.Reporter): Unit = {

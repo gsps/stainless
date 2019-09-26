@@ -14,6 +14,9 @@ import scala.language.existentials
 
 object DebugSectionRustgen extends inox.DebugSection("rustgen")
 
+// object optRustgenOutDir extends inox.StringOptionDef("rustgen-out-dir",
+//   "", "A directory to output rust sources into.")
+
 /**
  * Rustgen Component
  *
@@ -101,9 +104,10 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
         case _ => None
       }
 
-      // optBody.foreach(rustTree =>
-      //   reporter.info(s"Definition translates to:\n  ${rustTree.show.split("\n").mkString("\n  ")}"))
-      optBody.foreach(rustTree => println(rustTree.show))
+      optBody.foreach(rustTree =>
+        reporter.whenDebug(DebugSectionRustgen){debug => 
+          debug(s"Definition translates to:\n  ${rustTree.show.split("\n").mkString("\n  ")}")
+        })
 
       status
     }
