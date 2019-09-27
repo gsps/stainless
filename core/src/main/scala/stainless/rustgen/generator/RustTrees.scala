@@ -19,20 +19,21 @@ object rust {
   val Identifier = ItemIdentifier
 
   trait Tree {
-    def show: String = new Printer().show(this)
+    def show(implicit symbols: stainless.trees.Symbols): String =
+      new Printer().show(this)
   }
 
   case class Program(modules: Seq[ModuleDef]) extends Tree
 
   case class ModuleDef(
       name: Identifier, parent: Option[Identifier],
-      enums: Seq[Enum], functions: Seq[FunDef]) extends Tree {
+      enums: Seq[EnumDef], functions: Seq[FunDef]) extends Tree {
     override def toString: String =
       parent.map(p => s"(...)::$p::$name").getOrElse(s"::$name")
   }
 
   
-  case class Enum(id: Identifier, variants: Seq[EnumVariant]) extends Tree
+  case class EnumDef(id: Identifier, variants: Seq[EnumVariant]) extends Tree
   case class EnumVariant(id: Identifier, enm: Identifier, fields: Seq[ValDef]) extends Tree
 
   case class FunDef(id: Identifier, params: Seq[ValDef], resultType: Type, body: Expr) extends Tree
@@ -49,7 +50,7 @@ object rust {
   object StrType extends PrimitiveType
 
   case class RefType(tpe: Type) extends Type
-  case class EnumType(enm: Enum) extends Type
+  case class EnumType(id: Identifier) extends Type
   case class TupleType(tps: Seq[Type]) extends Type
 
 
@@ -57,11 +58,36 @@ object rust {
   
   case class Variable(id: Identifier) extends Expr
 
-  case class UnitLiteral() extends Expr
-  case class IntLiteral(value: Int, asType: Type) extends Expr
-  case class StrLiteral(value: String) extends Expr
+  sealed trait Literal[+T] extends Expr {
+    def value: T
+  }
+  case class UnitLiteral() extends Literal[Unit] { def value: Unit = () }
+  case class IntLiteral[+T : Integral](value: T, asType: Type) extends Literal[T]
+  case class StrLiteral(value: String) extends Literal[String]
+
+  case class Enum(id: Identifier, args: Seq[Expr]) extends Expr
+  case class Tuple(exprs: Seq[Expr]) extends Expr
 
   case class Let(vd: ValDef, value: Expr, body: Expr) extends Expr
+
+
+  sealed trait Pattern {
+    def binder: Option[ValDef]
+    def subPatterns: Seq[Pattern]
+  }
+  case class WildcardPattern(binder: Option[ValDef]) extends Pattern {
+    val subPatterns = Seq()
+  }
+  case class LiteralPattern[+T](binder: Option[ValDef], lit: Literal[T]) extends Pattern {
+    val subPatterns = Seq()
+  }
+  case class StructPattern(binder: Option[ValDef], id: Identifier, subPatterns: Seq[Pattern])
+    extends Pattern
+  case class TuplePattern(binder: Option[ValDef], subPatterns: Seq[Pattern]) extends Pattern
+
+  case class MatchCase(pattern: Pattern, optGuard: Option[Expr], rhs: Expr) extends Tree
+  case class MatchExpr(scrutinee: Expr, cases: Seq[MatchCase]) extends Expr
+
 
   case class Reference(expr: Expr) extends Expr
   

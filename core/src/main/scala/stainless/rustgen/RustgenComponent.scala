@@ -83,7 +83,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
       reporter.info(s"Translating ${fid}")
 
       val status = Try(gen.translate(defn)) match {
-        case Failure(exc) => UnsupportedFeature(exc.getMessage())
+        case Failure(exc) => exc.printStackTrace; UnsupportedFeature(exc.getMessage())
         case Success(rustTree) => Translated(rustTree)
       }
 
@@ -107,8 +107,9 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
       }
 
       optBody.foreach(rustTree =>
-        reporter.whenDebug(DebugSectionRustgen){debug => 
-          debug(s"Definition translates to:\n  ${rustTree.show.split("\n").mkString("\n  ")}")
+        reporter.whenDebug(DebugSectionRustgen){ debug =>
+          val output = rustTree.show(symbols).split("\n").mkString("\n  ")
+          debug(s"Definition translates to:\n  $output")
         })
 
       status
@@ -129,7 +130,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
       assert(outDir.isDirectory)
       program.modules.foreach { module =>
         val moduleFile = new File(outDir, s"${module.name}.rs")
-        val moduleContents = module.show
+        val moduleContents = module.show(symbols)
         Files.write(moduleFile.toPath, moduleContents.getBytes(StandardCharsets.UTF_8))
       }
     }
@@ -141,9 +142,6 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
     val sorts = symbols.sorts.values.filterNot(shouldIgnoreSort).map(_.id).toSeq
     reporter.debug(s"Processing ${sorts.size} sorts: ${sorts mkString ", "}")
     reporter.debug(s"Processing ${functions.size} functions: ${functions mkString ", "}")
-    for (function <- functions) {
-      reporter.debug(s"-- $function: ${symbols.getFunction(function).getPos.fullString}")
-    }
 
     val enumResults = sorts map (id => processDefinition(symbols.getSort(id)))
     val functionResults = functions map (id => processDefinition(symbols.getFunction(id)))

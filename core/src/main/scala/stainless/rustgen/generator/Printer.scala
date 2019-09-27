@@ -137,7 +137,7 @@ object Printer {
 }
 
 
-class Printer {
+class Printer()(implicit symbols: stainless.trees.Symbols) {
   import Printer._
   import rust._
 
@@ -150,7 +150,7 @@ class Printer {
   def print(tree: Tree)(implicit ctx: PrinterContext): PrintableChunk = {
     tree match {
       case tree: ModuleDef    => print(tree)
-      case tree: Enum         => print(tree)
+      case tree: EnumDef      => print(tree)
       case tree: EnumVariant  => print(tree)
       case tree: FunDef       => print(tree)
       case tree: ValDef       => print(tree)
@@ -170,7 +170,7 @@ ${nlSeparated(module.functions.map(print), 2)}
 """
   }
 
-  def print(enm: Enum)(implicit ctx: PrinterContext): PrintableChunk = {
+  def print(enm: EnumDef)(implicit ctx: PrinterContext): PrintableChunk = {
     val inner = ctx.inner
     p"""enum ${enm.id} {
 ${commanlSeparated(enm.variants.map(print(_)(inner)))}
@@ -199,7 +199,7 @@ ${print(fun.body)(ctx.inner)}
       case I32Type        => p"i32"
       case StrType        => p"str"
       case RefType(tpe)   => p"&$tpe"
-      case EnumType(enm)  => p"$enm"
+      case EnumType(id)   => p"$id"
       case TupleType(tps) => p"(${commaSeparated(tps.map(print))})"
     }
   }
@@ -207,20 +207,31 @@ ${print(fun.body)(ctx.inner)}
   def print(expr: Expr)(implicit ctx: PrinterContext): PrintableChunk = {
     expr match {
       case Variable(id) => p"$id"
-      case UnitLiteral() => p"()"
-      case IntLiteral(value, asType) => p"(${value.toString} as $asType)"
-      case StrLiteral(value) => p"$QUOTE$value$QUOTE"
+
+      case expr: Literal[_] => print(expr)
+
+      case Enum(id, args) =>
+        val enumId = symbols.getConstructor(id).sort
+        p"""$enumId::$id {
+${commanlSeparated(args.map(print))(ctx.inner)}
+}"""
+      case Tuple(exprs) => p"${commaSeparated(exprs.map(print))}"
+
       case Let(vd, value, body) =>
         p"""let $vd = {
 ${print(value)(ctx.inner)}
 };
 $body"""
-      case Reference(expr) =>
-        p"&($expr)"
+
+      case expr: MatchExpr => print(expr)
+
+      case Reference(expr) => p"&($expr)"
+
       case FunctionInvocation(fun, args) =>
         p"$fun(${commaSeparated(args.map(print))})"
       case MethodInvocation(method, recv, args) =>
         p"$recv.$method(${commaSeparated(args.map(print))})"
+
       case IfExpr(cond, thenn, elze) =>
         p"""if $cond {
 ${print(thenn)(ctx.inner)}
@@ -228,5 +239,46 @@ ${print(thenn)(ctx.inner)}
 ${print(elze)(ctx.inner)}
 }"""
     }
+  }
+
+  def print[T](lit: Literal[T])(implicit ctx: PrinterContext): PrintableChunk = {
+    lit match {
+      case UnitLiteral() => p"()"
+      case IntLiteral(value, asType) => p"(${value.toString} as $asType)"
+      case StrLiteral(value) => p"$QUOTE$value$QUOTE"
+    }
+  }
+
+  def print(expr: MatchExpr)(implicit ctx: PrinterContext): PrintableChunk = {
+    def printPattern(pat: Pattern)(implicit ctx: PrinterContext): PrintableChunk = {
+      val chunk = pat match {
+        case WildcardPattern(_) =>
+          p"_"
+        case LiteralPattern(_, lit) =>
+          print(lit)
+        case StructPattern(_, id, subPatterns) =>
+          val cons = symbols.getConstructor(id)
+          val enumId = cons.sort
+          val fieldChunks = (cons.fields zip subPatterns) map { case (field, pat) =>
+            p"${field.id}: ${printPattern(pat)}"
+          }
+          p"$enumId::$id { ${commaSeparated(fieldChunks)} }"
+        case TuplePattern(_, subPatterns) =>
+          p"(${commaSeparated(subPatterns.map(printPattern))})"
+      }
+      pat.binder.map(vd => p"${vd.id} @ $chunk").getOrElse(chunk)
+    }
+
+    def printCase(cse: MatchCase)(implicit ctx: PrinterContext): PrintableChunk = {
+      val MatchCase(pattern, optGuard, rhs) = cse
+      val optGuardChunk = optGuard.map(guard => p"if $guard").getOrElse(p"")
+      p"${printPattern(pattern)}$optGuardChunk => $rhs"
+    }
+
+    val MatchExpr(scrutinee, cases) = expr
+    val inner = ctx.inner
+    p"""match $scrutinee {
+${commanlSeparated(cases.map(printCase(_)(inner)))}
+}"""
   }
 }
