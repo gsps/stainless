@@ -6,7 +6,9 @@ package generator
 
 
 class ItemIdentifier private[generator](id: Identifier)
-  extends inox.Identifier(id.name, id.globalId, id.id, alwaysShowUniqueID = false)
+    extends inox.Identifier(id.name, id.globalId, id.id, alwaysShowUniqueID = false) {
+  def isMacro: Boolean = name.endsWith("!")
+}
 
 object ItemIdentifier {
   private[generator] def apply(name: String): ItemIdentifier =
@@ -104,6 +106,10 @@ object rust {
 
 
   private def op(rustName: String): Identifier = Identifier(rustName)
+
+  object stdPanic {
+    val `panic!` = Identifier("panic!")
+  }
 
   object stdOps {
     val add = op("add")

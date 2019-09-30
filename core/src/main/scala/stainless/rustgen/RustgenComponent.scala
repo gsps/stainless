@@ -82,7 +82,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)
       val fid = defn.id
       reporter.info(s"Translating ${fid}")
 
-      val status = Try(gen.translate(defn)) match {
+      val status = Try(gen.processDefinition(defn)) match {
         case Failure(exc) => exc.printStackTrace; UnsupportedFeature(exc.getMessage())
         case Success(rustTree) => Translated(rustTree)
       }

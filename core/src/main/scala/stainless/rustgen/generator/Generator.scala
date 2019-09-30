@@ -6,11 +6,10 @@ package generator
 
 import inox.utils.Bijection
 
-import scala.reflect.ClassTag
-
 object DebugSectionRustgenGenerator extends inox.DebugSection("rustgen-generator")
 
 
+// A stateful processor of Stainless ADTSorts and FunDefs that produces rust trees.
 class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbols) {
   import stainless.{trees => st}
   import generator.{rust => rt}
@@ -42,14 +41,14 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
     rt.Program(Seq(module))
   }
 
-  def translate(defn: st.Definition): rt.Tree = {
+  def processDefinition(defn: st.Definition): rt.Tree = {
     defn match {
       case sort: st.ADTSort => translate(sort)
       case fd: st.FunDef => translate(fd)
     }
   }
 
-  def translate(sort: st.ADTSort): rt.EnumDef = {
+  protected def translate(sort: st.ADTSort): rt.EnumDef = {
     assert(sort.tparams.isEmpty)
     val enumId: rt.Identifier = sort.id
     enumMap.cachedB(enumId){
@@ -61,7 +60,7 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
     }
   }
 
-  def translate(fd: st.FunDef): rt.FunDef = {
+  protected def translate(fd: st.FunDef): rt.FunDef = {
     assert(fd.tparams.isEmpty)
     val funId: rt.Identifier = fd.id
     functionMap.cachedB(funId){
@@ -72,11 +71,11 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
     }
   }
 
-  def translate(vd: st.ValDef): rt.ValDef = {
+  protected def translate(vd: st.ValDef): rt.ValDef = {
     rt.ValDef(vd.id, translate(vd.tpe))
   }
 
-  def translate(tpe: st.Type): rt.Type = {
+  protected def translate(tpe: st.Type): rt.Type = {
     tpe match {
       case st.UnitType()       => rt.UnitType
       case st.BooleanType()    => rt.BoolType
@@ -90,7 +89,7 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
     }
   }
 
-  def refIfNonADT[S <: st.Expr](f: S => rt.Expr)(expr: S): rt.Expr = {
+  protected def refIfNonADT[S <: st.Expr](f: S => rt.Expr)(expr: S): rt.Expr = {
     val rtExpr = f(expr)
     // NOTE: Can't currently do this test on the translated type, since
     //       we don't have reliable information on the resulting rust type
@@ -102,19 +101,22 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
     }
   }
 
-  def cloneIfADT[S <: st.Expr](f: S => rt.Expr)(expr: S): rt.Expr = {
-    val rtExpr = f(expr)
-    expr.getType match {
-      case st.ADTType(_, _) => rt.MethodInvocation(rt.stdRc.klone, rtExpr, Seq.empty)
-      case _ => rtExpr
-    }
-  }
-
-  def translate(expr: st.Expr): rt.Expr = {
+  protected def translate(expr: st.Expr): rt.Expr = {
     expr match {
-      case st.Variable(id, _, _) => rt.Variable(id)
+      case st.Let(_, st.Error(_, reason),
+            st.Annotated(st.ADTSelector(adt, selector), flags))
+          if flags.contains(st.Unchecked) && selector.name == "value" =>
+        // FIXME: Find a more robust way of compiling away stainless' "error"
+        rt.FunctionInvocation(rt.stdPanic.`panic!`, Seq(rt.StrLiteral(reason)))
 
-      case expr: st.Literal[_] => translate(expr)
+      case v: st.Variable =>
+        val rtV = rt.Variable(v.id)
+        v.getType match {
+          case st.ADTType(_, _) => rt.MethodInvocation(rt.stdRc.klone, rtV, Seq.empty)
+          case _ => rtV
+        }
+
+      case expr: st.Literal[_] => translateLiteral(expr)
 
       case st.ADT(id, tps, args) =>
         assert(tps.isEmpty)
@@ -127,11 +129,11 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
         rt.Let(translate(vd), translate(value), translate(body))
 
       case expr: st.MatchExpr =>
-        translate(expr)
+        translateMatch(expr)
 
       case st.FunctionInvocation(id, tps, args) =>
         assert(tps.isEmpty)
-        rt.FunctionInvocation(id, args.map(cloneIfADT(translate)))
+        rt.FunctionInvocation(id, args.map(translate))
 
       case st.UMinus(expr) =>
         rt.MethodInvocation(rt.stdOps.neg, translate(expr), Seq.empty)
@@ -174,11 +176,12 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
       case st.Annotated(body, _) => translate(body)
 
       case _ =>
-        throw new IllegalArgumentException(s"Unsupported expression '$expr'")
+        throw new IllegalArgumentException(
+          s"Unsupported expression '$expr' (${expr.getClass})")
     }
   }
 
-  def translate[T](lit: st.Literal[T]): rt.Literal[T] = {
+  protected def translateLiteral[T](lit: st.Literal[T]): rt.Literal[T] = {
     lit match {
       case st.UnitLiteral() =>
         rt.UnitLiteral()
@@ -190,14 +193,14 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
     }
   }
 
-  private def translate(expr: st.MatchExpr): rt.MatchExpr = {
+  protected def translateMatch(expr: st.MatchExpr): rt.MatchExpr = {
     def translatePattern(pat: st.Pattern): rt.Pattern = {
       val rtBinder = pat.binder.map(translate)
       pat match {
         case st.WildcardPattern(_) =>
           rt.WildcardPattern(rtBinder)
         case st.LiteralPattern(_, lit) =>
-          rt.LiteralPattern(rtBinder, translate(lit))
+          rt.LiteralPattern(rtBinder, translateLiteral(lit))
         case st.ADTPattern(_, id, tps, subPatterns) =>
           assert(tps.isEmpty)
           rt.StructPattern(rtBinder, id, subPatterns.map(translatePattern))
