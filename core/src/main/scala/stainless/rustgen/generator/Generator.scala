@@ -86,15 +86,27 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
         rt.TupleType(tps.map(translate))
       case st.ADTType(id, tps) =>
         assert(tps.isEmpty)
-        rt.RefType(rt.EnumType(id))
+        rt.stdRc.RcType(rt.EnumType(id, Seq.empty))
     }
   }
 
-  def ensureRef[S <: st.Expr](expr: S)(f: S => rt.Expr): rt.Expr = {
-    val rtexpr = f(expr)
-    translate(expr.getType) match {
-      case rt.RefType(_) => rtexpr
-      case _ => rt.Reference(rtexpr)
+  def refIfNonADT[S <: st.Expr](f: S => rt.Expr)(expr: S): rt.Expr = {
+    val rtExpr = f(expr)
+    // NOTE: Can't currently do this test on the translated type, since
+    //       we don't have reliable information on the resulting rust type
+    //       without the context we're translating in (for instance, in matches,
+    //       where we implicitly bind references of the scrutinee's parts).
+    expr.getType match {
+      case st.ADTType(_, _) => rtExpr
+      case _ => rt.Reference(rtExpr)
+    }
+  }
+
+  def cloneIfADT[S <: st.Expr](f: S => rt.Expr)(expr: S): rt.Expr = {
+    val rtExpr = f(expr)
+    expr.getType match {
+      case st.ADTType(_, _) => rt.MethodInvocation(rt.stdRc.klone, rtExpr, Seq.empty)
+      case _ => rtExpr
     }
   }
 
@@ -106,7 +118,8 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
 
       case st.ADT(id, tps, args) =>
         assert(tps.isEmpty)
-        rt.Enum(id, args.map(translate))
+        val value = rt.Enum(id, Seq.empty, args.map(translate))
+        rt.FunctionInvocation(rt.stdRc.neu, Seq(value))
       case st.Tuple(exprs) =>
         rt.Tuple(exprs.map(translate))
 
@@ -118,7 +131,7 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
 
       case st.FunctionInvocation(id, tps, args) =>
         assert(tps.isEmpty)
-        rt.FunctionInvocation(id, args.map(translate))
+        rt.FunctionInvocation(id, args.map(cloneIfADT(translate)))
 
       case st.UMinus(expr) =>
         rt.MethodInvocation(rt.stdOps.neg, translate(expr), Seq.empty)
@@ -140,15 +153,20 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
       // ...
 
       case st.LessThan(lhs, rhs) =>
-        rt.MethodInvocation(rt.stdCmp.lt, translate(lhs), Seq(ensureRef(rhs)(translate)))
+        val arg = refIfNonADT[st.Expr](translate)(rhs)
+        rt.MethodInvocation(rt.stdCmp.lt, translate(lhs), Seq(arg))
       case st.LessEquals(lhs, rhs) =>
-        rt.MethodInvocation(rt.stdCmp.le, translate(lhs), Seq(ensureRef(rhs)(translate)))
+        val arg = refIfNonADT[st.Expr](translate)(rhs)
+        rt.MethodInvocation(rt.stdCmp.le, translate(lhs), Seq(arg))
       case st.GreaterThan(lhs, rhs) =>
-        rt.MethodInvocation(rt.stdCmp.gt, translate(lhs), Seq(ensureRef(rhs)(translate)))
+        val arg = refIfNonADT[st.Expr](translate)(rhs)
+        rt.MethodInvocation(rt.stdCmp.gt, translate(lhs), Seq(arg))
       case st.GreaterEquals(lhs, rhs) =>
-        rt.MethodInvocation(rt.stdCmp.ge, translate(lhs), Seq(ensureRef(rhs)(translate)))
+        val arg = refIfNonADT[st.Expr](translate)(rhs)
+        rt.MethodInvocation(rt.stdCmp.ge, translate(lhs), Seq(arg))
       case st.Equals(lhs, rhs) =>
-        rt.MethodInvocation(rt.stdCmp.eq, translate(lhs), Seq(ensureRef(rhs)(translate)))
+        val arg = refIfNonADT[st.Expr](translate)(rhs)
+        rt.MethodInvocation(rt.stdCmp.eq, translate(lhs), Seq(arg))
 
       case st.IfExpr(cond, thenn, elze) =>
         rt.IfExpr(translate(cond), translate(thenn), translate(elze))
@@ -193,7 +211,14 @@ class Generator()(implicit context: inox.Context, symbols: stainless.trees.Symbo
       rt.MatchCase(translatePattern(pattern), optGuard.map(translate), translate(rhs))
     }
 
-    val rtScrutinee = translate(expr.scrutinee)
+    val rtScrutinee = {
+      val translated = translate(expr.scrutinee)
+      expr.scrutinee.getType match {
+        case st.ADTType(_, _) =>
+          rt.MethodInvocation(rt.stdRc.as_ref, translated, Seq.empty)
+        case _ => translated
+      }
+    }
     rt.MatchExpr(rtScrutinee, expr.cases.map(translateCase))
   }
 }

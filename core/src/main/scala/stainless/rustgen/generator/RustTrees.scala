@@ -32,7 +32,9 @@ object rust {
       parent.map(p => s"(...)::$p::$name").getOrElse(s"::$name")
   }
 
-  
+
+  // case class StructDef(id: Identifier,  tparams: Seq[Identifier], fields: Seq[ValDef]) extends Tree
+
   case class EnumDef(id: Identifier, variants: Seq[EnumVariant]) extends Tree
   case class EnumVariant(id: Identifier, enm: Identifier, fields: Seq[ValDef]) extends Tree
 
@@ -50,7 +52,8 @@ object rust {
   object StrType extends PrimitiveType
 
   case class RefType(tpe: Type) extends Type
-  case class EnumType(id: Identifier) extends Type
+  case class StructType(id: Identifier, tps: Seq[Type]) extends Type
+  case class EnumType(id: Identifier, tps: Seq[Type]) extends Type
   case class TupleType(tps: Seq[Type]) extends Type
 
 
@@ -65,7 +68,8 @@ object rust {
   case class IntLiteral[+T : Integral](value: T, asType: Type) extends Literal[T]
   case class StrLiteral(value: String) extends Literal[String]
 
-  case class Enum(id: Identifier, args: Seq[Expr]) extends Expr
+  case class Struct(id: Identifier, tps: Seq[Type], args: Seq[Expr]) extends Expr
+  case class Enum(id: Identifier, tps: Seq[Type], args: Seq[Expr]) extends Expr
   case class Tuple(exprs: Seq[Expr]) extends Expr
 
   case class Let(vd: ValDef, value: Expr, body: Expr) extends Expr
@@ -118,5 +122,19 @@ object rust {
     val ge = op("ge")
     val eq = op("eq")
     val ne = op("ne")  // unused!
+  }
+
+  object stdRc {
+    val Rc = Identifier("Rc")
+    val neu = Identifier("Rc::new")  // TODO: Introduce explicit rust modules?
+    val klone = Identifier("clone")
+    val as_ref = Identifier("as_ref")
+
+    object RcType {
+      def apply(tp: Type): StructType =
+        StructType(Rc, Seq(tp))
+      def unapply(tp: StructType): Option[Type] =
+        if (tp.id eq Rc) Some(tp.tps.head) else None
+    }
   }
 }

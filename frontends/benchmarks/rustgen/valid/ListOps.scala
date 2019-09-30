@@ -13,7 +13,7 @@ object ListOps {
     }
 
   def main(): Unit = {
-    val xs = Nil()
+    val xs = Cons(1, Cons(2, Nil()))
     println(length(xs))
   }
 }

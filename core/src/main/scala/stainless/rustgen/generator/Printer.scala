@@ -112,6 +112,12 @@ object Printer {
     }
   }
 
+  protected def ifNonEmpty[T](elements: Seq[T])(
+      f: Seq[T] => PrintableChunk)(
+      implicit ctx: PrinterContext): PrintableChunk = {
+    if (elements.nonEmpty) f(elements) else p""
+  }
+
   protected def separated(sep: String, chunks: Seq[PrintableChunk])(
       implicit ctx: PrinterContext): PrintableChunk = {
     val result = PrintableChunk.empty
@@ -163,6 +169,7 @@ class Printer()(implicit symbols: stainless.trees.Symbols) {
     p"""// Stainless-generated module '${module.name}'
 #![allow(unused_parens)]
 use std::ops::*;
+use std::rc::Rc;
 
 ${nlSeparated(module.enums.map(print), 2)}
 
@@ -191,16 +198,31 @@ ${print(fun.body)(ctx.inner)}
     p"${vd.id}: ${vd.tpe}"
   }
 
+  private def typeArgs(tps: Seq[Type])(implicit ctx: PrinterContext) =
+    ifNonEmpty(tps)(tps => p"::<${commaSeparated(tps.map(print))}>")
+
+  // TODO: Avoid inox.Identifier here
+  private def genericType(id: inox.Identifier, tps: Seq[Type])(
+      implicit ctx: PrinterContext): PrintableChunk =
+    p"$id${typeArgs(tps)}"
+
+  private def enumVariant(id: Identifier, tps: Seq[Type])(
+      implicit ctx: PrinterContext) = {
+    val cons = symbols.getConstructor(id)
+    p"${genericType(cons.sort, tps)}::$id"
+  }
+
   def print(tpe: Type)(implicit ctx: PrinterContext): PrintableChunk = {
     tpe match {
-      case UnitType       => p"()"
-      case BoolType       => p"bool"
-      case U32Type        => p"u32"
-      case I32Type        => p"i32"
-      case StrType        => p"str"
-      case RefType(tpe)   => p"&$tpe"
-      case EnumType(id)   => p"$id"
-      case TupleType(tps) => p"(${commaSeparated(tps.map(print))})"
+      case UnitType             => p"()"
+      case BoolType             => p"bool"
+      case U32Type              => p"u32"
+      case I32Type              => p"i32"
+      case StrType              => p"str"
+      case RefType(tpe)         => p"&$tpe"
+      case StructType(id, tps)  => genericType(id, tps)
+      case EnumType(id, tps)    => genericType(id, tps)
+      case TupleType(tps)       => p"(${commaSeparated(tps.map(print))})"
     }
   }
 
@@ -210,11 +232,22 @@ ${print(fun.body)(ctx.inner)}
 
       case expr: Literal[_] => print(expr)
 
-      case Enum(id, args) =>
-        val enumId = symbols.getConstructor(id).sort
-        p"""$enumId::$id {
-${commanlSeparated(args.map(print))(ctx.inner)}
+      case Struct(id, tps, args) =>
+        val inner = ctx.inner
+        p"""${genericType(id, tps)} {
+${commanlSeparated(args.map(print(_)(inner)))}
 }"""
+      case Enum(id, tps, args) =>
+        val inner = ctx.inner
+        val cons = symbols.getConstructor(id)
+        val fieldChunks = (cons.fields zip args) map { case (field, arg) =>
+          implicit val ctx: PrinterContext = inner
+          p"${field.id}: $arg"
+        }
+        p"""${enumVariant(id, tps)} {
+${commanlSeparated(fieldChunks)}
+}"""
+
       case Tuple(exprs) => p"${commaSeparated(exprs.map(print))}"
 
       case Let(vd, value, body) =>
