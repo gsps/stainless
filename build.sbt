@@ -336,6 +336,8 @@ lazy val root = (project in file("."))
   .settings(artifactSettings, noPublishSettings)
   .settings(
     sourcesInBase in Compile := false,
+    bloopExportJarClassifiers in Global := Some(Set("sources")),
+    bloopAggregateSourceDependencies in Global := true,
   )
   .dependsOn(`stainless-scalac`, `stainless-library`, `stainless-dotty`, `sbt-stainless`)
   .aggregate(`stainless-core`, `stainless-library`, `stainless-scalac`, `stainless-dotty`, `sbt-stainless`, `stainless-scalac-plugin`)
