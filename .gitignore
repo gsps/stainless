@@ -36,6 +36,7 @@ smt-sessions/
 tip-sessions/
 pri-sessions/
 stainless.out/
+rustgen-out/
 repairs.dat
 tmp
 
