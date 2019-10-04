@@ -2,11 +2,11 @@
 
 package stainless
 package rustgen
-package generator
+package ast
 
 // A generic way of deconstructing and reconstructing trees
 object Deconstructor {
-  import rust._
+  import Trees._
 
   type Builder[T <: Tree] =
     (Seq[Identifier], Seq[Variable], Seq[Expr], Seq[Type]) => T

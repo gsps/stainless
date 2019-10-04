@@ -3,7 +3,7 @@
 package stainless
 package rustgen
 
-import generator.{rust => rt}
+import ast.Trees.{Program => RustProgram}
 
 import io.circe._
 
@@ -47,7 +47,7 @@ object RustgenRun {
   import stainless.trees._
 
   sealed abstract class TranslationStatus
-  case class Translated(rustProgram: rt.Program) extends TranslationStatus
+  case class Translated(rustProgram: RustProgram) extends TranslationStatus
   case class UnsupportedFeature(error: String) extends TranslationStatus
 
   case class Result(status: TranslationStatus, time: Long)
@@ -76,7 +76,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)(
 
     val gen = new generator.Generator(context, symbols)
 
-    def outputProgram(outDirPath: String, program: rt.Program): Unit = {
+    def outputProgram(outDirPath: String, program: RustProgram): Unit = {
       val outDir = new File(outDirPath).getAbsoluteFile
       reporter.info(s"Outputting program to $outDir")
       outDir.mkdirs()

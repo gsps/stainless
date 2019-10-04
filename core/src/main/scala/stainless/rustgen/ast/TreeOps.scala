@@ -2,11 +2,11 @@
 
 package stainless
 package rustgen
-package generator
+package ast
 
 // Generic operations on rust trees (partially replicates inox.ast.GenTreeOps)
 object TreeOps {
-  import rust._
+  import Trees._
 
   /* Basic operations */
 

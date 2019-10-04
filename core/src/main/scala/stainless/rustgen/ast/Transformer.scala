@@ -2,9 +2,9 @@
 
 package stainless
 package rustgen
-package generator
+package ast
 
-import rust._
+import Trees._
 
 // TODO: Add transformations for `Flag`s
 trait Transformer {

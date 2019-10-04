@@ -2,11 +2,11 @@
 
 package stainless
 package rustgen
-package generator
+package ast
 
 import inox.utils.{Lazy, Positioned}
 
-object rust {
+object Trees {
   type Identifier = stainless.Identifier
   val Identifier = stainless.FreshIdentifier
 
@@ -201,8 +201,4 @@ object rust {
   case class RcNew(expr: Expr) extends Expr
   case class RcClone(expr: Expr) extends Expr
   case class RcDeref(expr: Expr) extends Expr
-
-  /* == Rust library symbols == */
-
-  val library = new RustLibrary()
 }

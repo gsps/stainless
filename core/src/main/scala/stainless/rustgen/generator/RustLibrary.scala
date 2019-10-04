@@ -5,9 +5,9 @@ package rustgen
 package generator
 
 // Rust standard symbols
-class RustLibrary {
-  import rust._
-  import DSL._
+object RustLibrary {
+  import ast.Trees._
+  import ast.DSL._
   import scala.language.postfixOps
 
   /* Well-known names (referred to during lowering) */

@@ -9,7 +9,7 @@ object DebugSectionRustgenGenerator extends inox.DebugSection("rustgen-generator
 // A stateful processor of Stainless ADTSorts and FunDefs that produces rust trees.
 class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
   import stainless.{trees => st}
-  import generator.{rust => rt}
+  import ast.{Trees => rt}
 
   def apply(sorts: Seq[st.ADTSort], functions: Seq[st.FunDef]): rt.Program = {
     def checkWellTyped(program: rt.Program) = {

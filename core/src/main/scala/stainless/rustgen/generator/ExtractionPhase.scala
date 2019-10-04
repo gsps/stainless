@@ -8,7 +8,7 @@ import collection.mutable.{Map => MutableMap}
 
 class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
   import stainless.{trees => st}
-  import generator.{rust => rt}
+  import ast.{Trees => rt}
 
   implicit val inoxSymbols: st.Symbols = _inoxSymbols
 
@@ -19,9 +19,9 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
   val functionMap: MutableMap[rt.Identifier, rt.FunDef] = MutableMap()
 
   def initWithLibrary() = {
-    rt.library.structs.foreach(item => structMap += item.id -> item)
-    rt.library.enums.foreach(item => enumMap += item.id -> item)
-    rt.library.functions.foreach(item => functionMap += item.id -> item)
+    RustLibrary.structs.foreach(item => structMap += item.id -> item)
+    RustLibrary.enums.foreach(item => enumMap += item.id -> item)
+    RustLibrary.functions.foreach(item => functionMap += item.id -> item)
   }
   initWithLibrary()
 
@@ -133,34 +133,34 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
         rt.FunctionInvocation(id, args.map(translate))
 
       case st.UMinus(expr) =>
-        rt.MethodInvocation(rt.library.ops.neg, translate(expr), Seq.empty)
+        rt.MethodInvocation(RustLibrary.ops.neg, translate(expr), Seq.empty)
       case st.Plus(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.ops.add, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.ops.add, translate(lhs), Seq(translate(rhs)))
       case st.Minus(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.ops.sub, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.ops.sub, translate(lhs), Seq(translate(rhs)))
       case st.Times(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.ops.mul, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.ops.mul, translate(lhs), Seq(translate(rhs)))
       case st.Division(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.ops.div, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.ops.div, translate(lhs), Seq(translate(rhs)))
       case st.Modulo(lhs, rhs) =>
         ???
       case st.Remainder(lhs, rhs) =>
         ???
 
       case st.BVNot(expr) =>
-        rt.MethodInvocation(rt.library.ops.not, translate(expr), Seq.empty)
+        rt.MethodInvocation(RustLibrary.ops.not, translate(expr), Seq.empty)
       // ...
 
       case st.LessThan(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.cmp.lt, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.cmp.lt, translate(lhs), Seq(translate(rhs)))
       case st.LessEquals(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.cmp.le, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.cmp.le, translate(lhs), Seq(translate(rhs)))
       case st.GreaterThan(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.cmp.gt, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.cmp.gt, translate(lhs), Seq(translate(rhs)))
       case st.GreaterEquals(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.cmp.ge, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.cmp.ge, translate(lhs), Seq(translate(rhs)))
       case st.Equals(lhs, rhs) =>
-        rt.MethodInvocation(rt.library.cmp.eq, translate(lhs), Seq(translate(rhs)))
+        rt.MethodInvocation(RustLibrary.cmp.eq, translate(lhs), Seq(translate(rhs)))
 
       case st.IfExpr(cond, thenn, elze) =>
         rt.IfExpr(translate(cond), translate(thenn), translate(elze))

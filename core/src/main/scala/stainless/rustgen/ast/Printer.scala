@@ -2,7 +2,7 @@
 
 package stainless
 package rustgen
-package generator
+package ast
 
 import scala.collection.mutable.{ArrayBuffer, StringBuilder}
 
@@ -18,8 +18,8 @@ object PrinterContext {
   val indentStep: Int = 2
 }
 
-class PrintableChunk private[generator] (implicit val ctx: PrinterContext) {
-  private[generator] val lines: ArrayBuffer[(Option[Int], StringBuffer)] =
+class PrintableChunk private[ast] (implicit val ctx: PrinterContext) {
+  private[ast] val lines: ArrayBuffer[(Option[Int], StringBuffer)] =
     ArrayBuffer((None, new StringBuffer))
 
   private def lastBuffer: StringBuffer = lines.last._2
@@ -99,7 +99,7 @@ object Printer {
         arg match {
           case string: String        => result.appendMultiLineString(string)
           case id: Identifier        => result.appendNewlineFreeString(id.toString)
-          case tree: rust.Tree       => result += ctx.printer.print(tree)
+          case tree: Trees.Tree      => result += ctx.printer.print(tree)
           case chunk: PrintableChunk => result += chunk
           case _ =>
             throw new IllegalArgumentException(
@@ -146,9 +146,9 @@ object Printer {
     separated(",\n", chunks)
 }
 
-class Printer()(implicit symbols: rust.Symbols) {
+class Printer()(implicit symbols: Trees.Symbols) {
   import Printer._
-  import rust._
+  import Trees._
   import TypingError._
 
   private val QUOTE = "\""

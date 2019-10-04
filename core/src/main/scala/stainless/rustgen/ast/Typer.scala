@@ -2,14 +2,14 @@
 
 package stainless
 package rustgen
-package generator
+package ast
 
 import scala.annotation.tailrec
 
 import collection.mutable.{Map => MutableMap}
 
-class Typer(_symbols: rust.Symbols, isRelaxed: Boolean) {
-  import rust._
+class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
+  import Trees._
   import TypingError._
 
   protected implicit val symbols: Symbols = _symbols

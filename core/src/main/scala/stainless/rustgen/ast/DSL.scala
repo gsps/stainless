@@ -2,11 +2,11 @@
 
 package stainless
 package rustgen
-package generator
+package ast
 
 // A DSL to create RustTrees programs and expressions
 object DSL {
-  import rust._
+  import Trees._
 
   /* Types */
 
