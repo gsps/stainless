@@ -6,7 +6,6 @@ package generator
 
 import scala.collection.mutable.{ArrayBuffer, StringBuilder}
 
-
 class PrinterContext(val printer: Printer, val indentLevel: Int) {
   def inner = new PrinterContext(printer, indentLevel + PrinterContext.indentStep)
 
@@ -22,7 +21,7 @@ object PrinterContext {
 class PrintableChunk private[generator] (implicit val ctx: PrinterContext) {
   private[generator] val lines: ArrayBuffer[(Option[Int], StringBuffer)] =
     ArrayBuffer((None, new StringBuffer))
-  
+
   private def lastBuffer: StringBuffer = lines.last._2
 
   private def appendNewline(): Unit = {
@@ -37,9 +36,8 @@ class PrintableChunk private[generator] (implicit val ctx: PrinterContext) {
       lastBuffer.append(string)
     }
   }
-  
-  private def appendNewlineFreeStringBuffer(level: Option[Int],
-      buffer: StringBuffer): Unit = {
+
+  private def appendNewlineFreeStringBuffer(level: Option[Int], buffer: StringBuffer): Unit = {
     val lastIndex = lines.length - 1
     val (lastLevel, lastBuffer) = lines(lastIndex)
     lines(lastIndex) = (lastLevel.orElse(level), lastBuffer)
@@ -103,8 +101,10 @@ object Printer {
           case id: Identifier        => result.appendNewlineFreeString(id.toString)
           case tree: rust.Tree       => result += ctx.printer.print(tree)
           case chunk: PrintableChunk => result += chunk
-          case _ => throw new IllegalArgumentException(
-            s"Printer string interpolator does not support: >> $arg <<")
+          case _ =>
+            throw new IllegalArgumentException(
+              s"Printer string interpolator does not support: >> $arg <<"
+            )
         }
         result.appendMultiLineString(part)
       }
@@ -112,14 +112,15 @@ object Printer {
     }
   }
 
-  protected def ifNonEmpty[T](elements: Seq[T])(
-      f: Seq[T] => PrintableChunk)(
-      implicit ctx: PrinterContext): PrintableChunk = {
+  protected def ifNonEmpty[T](
+      elements: Seq[T]
+  )(f: Seq[T] => PrintableChunk)(implicit ctx: PrinterContext): PrintableChunk = {
     if (elements.nonEmpty) f(elements) else p""
   }
 
   protected def separated(sep: String, chunks: Seq[PrintableChunk])(
-      implicit ctx: PrinterContext): PrintableChunk = {
+      implicit ctx: PrinterContext
+  ): PrintableChunk = {
     val result = PrintableChunk.empty
     val it = chunks.iterator
     if (it.nonEmpty) {
@@ -131,23 +132,30 @@ object Printer {
     }
     result
   }
-  protected def commaSeparated(chunks: Seq[PrintableChunk])(
-      implicit ctx: PrinterContext): PrintableChunk =
+  protected def commaSeparated(
+      chunks: Seq[PrintableChunk]
+  )(implicit ctx: PrinterContext): PrintableChunk =
     separated(", ", chunks)
   protected def nlSeparated(chunks: Seq[PrintableChunk], n: Int = 1)(
-      implicit ctx: PrinterContext): PrintableChunk =
+      implicit ctx: PrinterContext
+  ): PrintableChunk =
     separated("\n" * n, chunks)
-  protected def commanlSeparated(chunks: Seq[PrintableChunk])(
-      implicit ctx: PrinterContext): PrintableChunk =
+  protected def commanlSeparated(
+      chunks: Seq[PrintableChunk]
+  )(implicit ctx: PrinterContext): PrintableChunk =
     separated(",\n", chunks)
 }
 
-
-class Printer()(implicit symbols: stainless.trees.Symbols) {
+class Printer()(implicit symbols: rust.Symbols) {
   import Printer._
   import rust._
+  import TypingError._
 
   private val QUOTE = "\""
+
+  def show(program: Program): String = {
+    print(program)(PrinterContext(this)).toString
+  }
 
   def show(tree: Tree): String = {
     print(tree)(PrinterContext(this)).toString
@@ -155,26 +163,52 @@ class Printer()(implicit symbols: stainless.trees.Symbols) {
 
   def print(tree: Tree)(implicit ctx: PrinterContext): PrintableChunk = {
     tree match {
-      case tree: ModuleDef    => print(tree)
-      case tree: EnumDef      => print(tree)
-      case tree: EnumVariant  => print(tree)
-      case tree: FunDef       => print(tree)
-      case tree: ValDef       => print(tree)
-      case tree: Type         => print(tree)
-      case tree: Expr         => print(tree)
+      case tree: Definition  => print(tree)
+      case tree: Type        => print(tree)
+      case tree: Expr        => print(tree)
+      case tree: Flag        => print(tree)
+      case tree: Pattern     => print(tree)
+      case tree: MatchCase   => print(tree)
+      case tree: TypingError => print(tree)
     }
   }
 
-  def print(module: ModuleDef)(implicit ctx: PrinterContext): PrintableChunk = {
-    p"""// Stainless-generated module '${module.name}'
+  def print(program: Program)(implicit ctx: PrinterContext): PrintableChunk = {
+    val Symbols(structs, enums, functions) = program.symbols
+    p"""// Stainless-generated module
 #![allow(unused_parens)]
 use std::ops::*;
 use std::rc::Rc;
 
-${nlSeparated(module.enums.map(print), 2)}
+${nlSeparated(structs.values.toSeq.map(print), 2)}
 
-${nlSeparated(module.functions.map(print), 2)}
+${nlSeparated(enums.values.toSeq.map(print), 2)}
+
+${nlSeparated(functions.values.toSeq.map(print), 2)}
 """
+  }
+
+  def print(flag: Flag)(implicit ctx: PrinterContext): PrintableChunk = {
+    flag match {
+      case Library => p"@library"
+    }
+  }
+
+  def print(defn: Definition)(implicit ctx: PrinterContext): PrintableChunk = {
+    defn match {
+      case tree: StructDef   => print(tree)
+      case tree: EnumDef     => print(tree)
+      case tree: EnumVariant => print(tree)
+      case tree: FunDef      => print(tree)
+      case tree: ValDef      => print(tree)
+    }
+  }
+
+  def print(struct: StructDef)(implicit ctx: PrinterContext): PrintableChunk = {
+    val inner = ctx.inner
+    p"""struct ${struct.id} {
+${commanlSeparated(struct.fields.map(print(_)(inner)))}
+}"""
   }
 
   def print(enm: EnumDef)(implicit ctx: PrinterContext): PrintableChunk = {
@@ -201,34 +235,58 @@ ${print(fun.body)(ctx.inner)}
   private def typeArgs(tps: Seq[Type])(implicit ctx: PrinterContext) =
     ifNonEmpty(tps)(tps => p"::<${commaSeparated(tps.map(print))}>")
 
-  // TODO: Avoid inox.Identifier here
-  private def genericType(id: inox.Identifier, tps: Seq[Type])(
-      implicit ctx: PrinterContext): PrintableChunk =
+  private def genericType(id: Identifier, tps: Seq[Type])(
+      implicit ctx: PrinterContext
+  ): PrintableChunk =
     p"$id${typeArgs(tps)}"
 
-  private def enumVariant(id: Identifier, tps: Seq[Type])(
-      implicit ctx: PrinterContext) = {
-    val cons = symbols.getConstructor(id)
-    p"${genericType(cons.sort, tps)}::$id"
+  private def enumVariant(id: Identifier, tps: Seq[Type])(implicit ctx: PrinterContext) = {
+    val vari = symbols.getEnumVariant(id)
+    p"${genericType(vari.enm, tps)}::$id"
+  }
+
+  def print(err: TypingError)(implicit ctx: PrinterContext): PrintableChunk = {
+    err match {
+      case ArgumentTypeMismatch(blamed, expected, actual) =>
+        p"argument type $actual doens't match parameter $expected"
+      case ReturnTypeMismatch(blamed, expected, actual) =>
+        p"returned type $actual doesn't match result type $expected"
+      case LetTypeMismatch(blamed, expected, actual) =>
+        p"type $actual doesn't match binding's type $expected"
+      case ConditionTypeMismatch(blamed, actual) =>
+        p"type $actual doesn't match expected boolean type"
+      case MergeTypeMismatch(blamed, expected, actual) =>
+        p"branch result type $actual doesn't match expected type $expected"
+      case PatternTypeMismatch(blamed, expected) =>
+        p"pattern doesn't match scrutinee type $expected"
+      case TypeMatchMismatch(actual, expected) =>
+        p"type $actual doesn't match shape $expected"
+    }
   }
 
   def print(tpe: Type)(implicit ctx: PrinterContext): PrintableChunk = {
     tpe match {
-      case UnitType             => p"()"
-      case BoolType             => p"bool"
-      case U32Type              => p"u32"
-      case I32Type              => p"i32"
-      case StrType              => p"str"
-      case RefType(tpe)         => p"&$tpe"
-      case StructType(id, tps)  => genericType(id, tps)
-      case EnumType(id, tps)    => genericType(id, tps)
-      case TupleType(tps)       => p"(${commaSeparated(tps.map(print))})"
+      case NoType              => p"<none>"
+      case ErrorType(reason)   => p"<error: ${print(reason)}>"
+      case HoleType(id)        => p"?$id"
+      case UnitType()          => p"()"
+      case BoolType()          => p"bool"
+      case U32Type()           => p"u32"
+      case I32Type()           => p"i32"
+      case StrType()           => p"str"
+      case StructType(id, tps) => genericType(id, tps)
+      case EnumType(id, tps)   => genericType(id, tps)
+      case TupleType(tps)      => p"(${commaSeparated(tps.map(print))})"
+      case RefType(tpe)        => p"&$tpe"
+      case RcType(tpe)         => p"Rc<$tpe>"
     }
   }
 
   def print(expr: Expr)(implicit ctx: PrinterContext): PrintableChunk = {
     expr match {
-      case Variable(id) => p"$id"
+      case MissingExpr(tpe) => p"<empty tree : $tpe>"
+
+      case Variable(id, _) => p"$id"
 
       case expr: Literal[_] => print(expr)
 
@@ -239,10 +297,11 @@ ${commanlSeparated(args.map(print(_)(inner)))}
 }"""
       case Enum(id, tps, args) =>
         val inner = ctx.inner
-        val cons = symbols.getConstructor(id)
-        val fieldChunks = (cons.fields zip args) map { case (field, arg) =>
-          implicit val ctx: PrinterContext = inner
-          p"${field.id}: $arg"
+        val vari = symbols.getEnumVariant(id)
+        val fieldChunks = (vari.fields zip args) map {
+          case (field, arg) =>
+            implicit val ctx: PrinterContext = inner
+            p"${field.id}: $arg"
         }
         p"""${enumVariant(id, tps)} {
 ${commanlSeparated(fieldChunks)}
@@ -256,9 +315,12 @@ ${print(value)(ctx.inner)}
 };
 $body"""
 
-      case expr: MatchExpr => print(expr)
-
-      case Reference(expr) => p"&($expr)"
+      case expr: MatchExpr =>
+        val MatchExpr(scrutinee, cases) = expr
+        val inner = ctx.inner
+        p"""match $scrutinee {
+  ${commanlSeparated(cases.map(print(_)(inner)))}
+  }"""
 
       case FunctionInvocation(fun, args) =>
         p"$fun(${commaSeparated(args.map(print))})"
@@ -267,51 +329,52 @@ $body"""
 
       case IfExpr(cond, thenn, elze) =>
         p"""if $cond {
-${print(thenn)(ctx.inner)}
-} else {
-${print(elze)(ctx.inner)}
-}"""
+        ${print(thenn)(ctx.inner)}
+      } else {
+        ${print(elze)(ctx.inner)}
+      }"""
+
+      case Error(_, description) => p"panic!(${StrLiteral(description)})"
+
+      case Reference(expr) => p"&($expr)"
+
+      case RcNew(expr)   => p"Rc::new($expr)"
+      case RcClone(expr) => p"($expr).clone()"
+      case RcDeref(expr) => p"($expr).asRef()"
     }
   }
 
   def print[T](lit: Literal[T])(implicit ctx: PrinterContext): PrintableChunk = {
     lit match {
-      case UnitLiteral() => p"()"
+      case UnitLiteral()             => p"()"
+      case BoolLiteral(value)        => p"${value.toString}"
       case IntLiteral(value, asType) => p"(${value.toString} as $asType)"
-      case StrLiteral(value) => p"$QUOTE$value$QUOTE"
+      case StrLiteral(value)         => p"$QUOTE$value$QUOTE"
     }
   }
 
-  def print(expr: MatchExpr)(implicit ctx: PrinterContext): PrintableChunk = {
-    def printPattern(pat: Pattern)(implicit ctx: PrinterContext): PrintableChunk = {
-      val chunk = pat match {
-        case WildcardPattern(_) =>
-          p"_"
-        case LiteralPattern(_, lit) =>
-          print(lit)
-        case StructPattern(_, id, subPatterns) =>
-          val cons = symbols.getConstructor(id)
-          val enumId = cons.sort
-          val fieldChunks = (cons.fields zip subPatterns) map { case (field, pat) =>
-            p"${field.id}: ${printPattern(pat)}"
-          }
-          p"$enumId::$id { ${commaSeparated(fieldChunks)} }"
-        case TuplePattern(_, subPatterns) =>
-          p"(${commaSeparated(subPatterns.map(printPattern))})"
-      }
-      pat.binder.map(vd => p"${vd.id} @ $chunk").getOrElse(chunk)
-    }
+  def print(cse: MatchCase)(implicit ctx: PrinterContext): PrintableChunk = {
+    val MatchCase(pattern, optGuard, rhs) = cse
+    val optGuardChunk = optGuard.map(guard => p"if $guard").getOrElse(p"")
+    p"${print(pattern)}$optGuardChunk => $rhs"
+  }
 
-    def printCase(cse: MatchCase)(implicit ctx: PrinterContext): PrintableChunk = {
-      val MatchCase(pattern, optGuard, rhs) = cse
-      val optGuardChunk = optGuard.map(guard => p"if $guard").getOrElse(p"")
-      p"${printPattern(pattern)}$optGuardChunk => $rhs"
+  def print(pat: Pattern)(implicit ctx: PrinterContext): PrintableChunk = {
+    val chunk = pat match {
+      case WildcardPattern(_) =>
+        p"_"
+      case LiteralPattern(_, lit) =>
+        print(lit)
+      case StructPattern(_, id, subPatterns) =>
+        val vari = symbols.getEnumVariant(id)
+        val fieldChunks = (vari.fields zip subPatterns) map {
+          case (field, pat) =>
+            p"${field.id}: ${print(pat)}"
+        }
+        p"${vari.enm}::$id { ${commaSeparated(fieldChunks)} }"
+      case TuplePattern(_, subPatterns) =>
+        p"(${commaSeparated(subPatterns.map(print))})"
     }
-
-    val MatchExpr(scrutinee, cases) = expr
-    val inner = ctx.inner
-    p"""match $scrutinee {
-${commanlSeparated(cases.map(printCase(_)(inner)))}
-}"""
+    pat.binder.map(vd => p"${vd.id} @ $chunk").getOrElse(chunk)
   }
 }

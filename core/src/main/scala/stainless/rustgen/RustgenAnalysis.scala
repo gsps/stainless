@@ -11,14 +11,13 @@ trait RustgenAnalysis extends AbstractAnalysis {
   val sources: Set[Identifier]
   val results: Seq[Result]
 
-  private lazy val records = results map { case Result(fd, status, time) =>
+  private lazy val records = results map { case Result(status, time) =>
     val textStatus = status match {
       case RustgenRun.UnsupportedFeature(error) => RustgenReport.UnsupportedFeature(error)
-      case RustgenRun.Translated(rustTree) => RustgenReport.Translated()
+      case RustgenRun.Translated(rustProgram) => RustgenReport.Translated()
     }
-    Record(fd.id, fd.getPos, textStatus, time)
+    Record(inox.FreshIdentifier("<noname>"), inox.utils.NoPosition, textStatus, time)
   }
-
   override type Report = RustgenReport
   override val name = RustgenComponent.name
   override def toReport = new RustgenReport(records, sources)
