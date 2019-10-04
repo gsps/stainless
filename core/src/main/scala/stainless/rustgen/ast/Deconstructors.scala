@@ -5,7 +5,7 @@ package rustgen
 package ast
 
 // A generic way of deconstructing and reconstructing trees
-object Deconstructor {
+object TreeDeconstructor {
   import Trees._
 
   type Builder[T <: Tree] =
@@ -252,6 +252,19 @@ object Deconstructor {
       case RcType(tpe) =>
         (NoIdentifiers, NoVariables, NoExpressions, Seq(tpe),
           (_, _, _, tps) => RcType(tps.head))
+    }
+  }
+}
+
+object Deconstructors {
+  import Trees._
+
+  val deconstructor = TreeDeconstructor
+
+  object Operator extends TreeExtractor[Expr] {
+    def unapply(e: Expr): Option[(Seq[Expr], Seq[Expr] => Expr)] = {
+      val (ids, vs, es, tps, /* flags,*/ builder) = deconstructor.deconstruct(e)
+      Some(es, ess => builder(ids, vs, ess, tps /*, flags*/))
     }
   }
 }

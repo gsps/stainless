@@ -45,7 +45,7 @@ trait Transformer {
   // }
 
   def transform(e: Expr, env: Env): Expr = {
-    val (ids, vs, es, tps /*, flags*/, builder) = Deconstructor.deconstruct(e)
+    val (ids, vs, es, tps /*, flags*/, builder) = TreeDeconstructor.deconstruct(e)
 
     var changed = false
 
@@ -88,7 +88,7 @@ trait Transformer {
   }
 
   def transform(tpe: Type, env: Env): Type = {
-    val (ids, vs, es, tps /*, flags*/, builder) = Deconstructor.deconstruct(tpe)
+    val (ids, vs, es, tps /*, flags*/, builder) = TreeDeconstructor.deconstruct(tpe)
 
     var changed = false
 
@@ -131,7 +131,7 @@ trait Transformer {
   }
 
   // def transform(flag: Flag, env: Env): Flag = {
-  //   val (ids, es, tps, builder) = Deconstructor.deconstruct(flag)
+  //   val (ids, es, tps, builder) = TreeDeconstructor.deconstruct(flag)
   //
   //   var changed = false
   //   val newIds = for (id <- ids) yield {
