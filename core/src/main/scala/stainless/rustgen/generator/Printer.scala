@@ -223,7 +223,7 @@ ${commanlSeparated(enm.variants.map(print(_)(inner)))}
   }
 
   def print(fun: FunDef)(implicit ctx: PrinterContext): PrintableChunk = {
-    p"""fn ${fun.id}(${commaSeparated(fun.params.map(print))}) -> ${fun.resultType} {
+    p"""fn ${fun.id}(${commaSeparated(fun.params.map(print))}) -> ${fun.returnType} {
 ${print(fun.body)(ctx.inner)}
 }"""
   }

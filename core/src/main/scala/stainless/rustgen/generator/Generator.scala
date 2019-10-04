@@ -17,7 +17,6 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
       val illtyped = program.typer.checkWellTyped()
       if (illtyped.nonEmpty) {
         val lines = illtyped map { id =>
-          // TODO: Add position
           val fd = program.symbols.getFunction(id)
           program.typer.getType(fd) match {
             case rt.ErrorType(reason) => s"  ${fd.id.fullName} @${fd.getPos}: ${reason.show}"

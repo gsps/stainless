@@ -6,18 +6,6 @@ package generator
 
 import inox.utils.{Lazy, Positioned}
 
-/*
-class ItemIdentifier private[generator](id: Identifier)
-    extends inox.Identifier(id.name, id.globalId, id.id, alwaysShowUniqueID = false) {
-  def isMacro: Boolean = name.endsWith("!")
-}
-
-object ItemIdentifier {
-  private[generator] def apply(name: String): ItemIdentifier =
-    new ItemIdentifier(inox.FreshIdentifier(name))
-}
- */
-
 object rust {
   type Identifier = stainless.Identifier
   val Identifier = stainless.FreshIdentifier
@@ -82,7 +70,7 @@ object rust {
   case class FunDef(
       id: Identifier,
       params: Seq[ValDef],
-      resultType: Type,
+      returnType: Type,
       body: Expr,
       flags: Seq[Flag]
   ) extends Definition
@@ -168,7 +156,6 @@ object rust {
   case class Enum(id: Identifier, tps: Seq[Type], args: Seq[Expr]) extends Expr {
     assert(tps.isEmpty) // TODO
   }
-  // TODO: Why not have type arguments here as well?
   case class Tuple(exprs: Seq[Expr]) extends Expr
 
   case class Let(vd: ValDef, value: Expr, body: Expr) extends Expr

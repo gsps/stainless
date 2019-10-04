@@ -8,12 +8,6 @@ package generator
 object DSL {
   import rust._
 
-  /* Expressions */
-
-  // implicit class ExprWrapper(expr: Expr) {
-  //   ???
-  // }
-
   /* Types */
 
   def ST(id: Identifier) = new IdToStructType(id)
@@ -49,15 +43,15 @@ object DSL {
   def mkFunDef(
       id: Identifier,
       params: Seq[ValDef],
-      resultType: Type,
+      returnType: Type,
       body: Expr,
       flags: Seq[Flag]
   ): FunDef = {
-    FunDef(id, params, resultType, body, flags)
+    FunDef(id, params, returnType, body, flags)
   }
 
   // (For library stubs)
-  def mkFunDef(id: Identifier, params: Seq[ValDef], resultType: Type): FunDef = {
-    mkFunDef(id, params, resultType, MissingExpr(resultType), Seq(Library))
+  def mkFunDef(id: Identifier, params: Seq[ValDef], returnType: Type): FunDef = {
+    mkFunDef(id, params, returnType, MissingExpr(returnType), Seq(Library))
   }
 }

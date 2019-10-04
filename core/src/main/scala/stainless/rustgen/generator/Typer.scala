@@ -110,10 +110,10 @@ class Typer(_symbols: rust.Symbols, isRelaxed: Boolean) {
 
   protected def computeType(fd: FunDef): Type = {
     ifWellTyped(fd.body) { bodyTpe =>
-      if (!conformsTo(bodyTpe, fd.resultType))
-        ReturnTypeMismatch(fd, fd.resultType, bodyTpe).toType
+      if (!conformsTo(bodyTpe, fd.returnType))
+        ReturnTypeMismatch(fd, fd.returnType, bodyTpe).toType
       else
-        fd.resultType
+        fd.returnType
     }
   }
 
@@ -125,7 +125,7 @@ class Typer(_symbols: rust.Symbols, isRelaxed: Boolean) {
           case (param, argTpe) if !conformsTo(argTpe, param.tpe) =>
             ArgumentTypeMismatch(expr, param.tpe, argTpe).toType
         }
-        optErrorTpe getOrElse fd.resultType
+        optErrorTpe getOrElse fd.returnType
       }
     }
 

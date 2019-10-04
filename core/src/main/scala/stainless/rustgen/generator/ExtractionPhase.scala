@@ -30,16 +30,6 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
   def apply(sorts: Seq[st.ADTSort], functions: Seq[st.FunDef]): rt.Program = {
     sorts.foreach(translate)
     functions.foreach(translate)
-    // val enums = enumMap sortWith { case ((id1, _), (id2, _)) =>
-    //   val pos1 = symbols.getFunction(id1).getPos
-    //   val pos2 = symbols.getFunction(id2).getPos
-    //   (pos1 compare pos2) < 0
-    // }
-    // val functions = functionMap sortWith { case ((id1, _), (id2, _)) =>
-    //   val pos1 = symbols.getFunction(id1).getPos
-    //   val pos2 = symbols.getFunction(id2).getPos
-    //   (pos1 compare pos2) < 0
-    // })
     val rtSymbols = rt.Symbols(structMap.toMap, enumMap.toMap, functionMap.toMap)
     rt.Program(rtSymbols)
   }
