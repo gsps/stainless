@@ -67,4 +67,14 @@ trait GenTreeOps {
 object ExprOps extends GenTreeOps {
   type T = Expr
   val Deconstructor = Deconstructors.Operator
+
+  /** Replaces bottom-up variables by looking up for them in a map */
+  def replaceFromValDefs(substs: Map[ValDef, Expr], expr: Expr): Expr = {
+    new TreeTransformer {
+      override def transform(expr: Expr): Expr = expr match {
+        case v: Variable => substs.getOrElse(v.toVal, super.transform(v))
+        case _ => super.transform(expr)
+      }
+    }.transform(expr)
+  }
 }

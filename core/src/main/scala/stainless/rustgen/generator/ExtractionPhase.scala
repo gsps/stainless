@@ -30,7 +30,8 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
   def apply(sorts: Seq[st.ADTSort], functions: Seq[st.FunDef]): rt.Program = {
     sorts.foreach(translate)
     functions.foreach(translate)
-    val rtSymbols = rt.Symbols(structMap.toMap, enumMap.toMap, functionMap.toMap)
+    val rtSymbols =
+      rt.Symbols(structMap.toMap, enumMap.toMap, functionMap.toMap, strictTyping = false)
     rt.Program(rtSymbols)
   }
 
@@ -111,7 +112,7 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
         rt.Error(translate(tpe), reason)
 
       case st.Variable(id, tpe, _) =>
-        rt.Variable(id, translate(tpe))
+        rt.Variable(id, translate(tpe), Seq.empty)
 
       case expr: st.Literal[_] =>
         translateLiteral(expr)
@@ -176,6 +177,8 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
     lit match {
       case st.UnitLiteral() =>
         rt.UnitLiteral()
+      case st.BooleanLiteral(value) =>
+        rt.BoolLiteral(value)
       case st.Int32Literal(value) =>
         rt.IntLiteral(value, rt.I32Type())
           .asInstanceOf[rt.Literal[T]] // unapply doesn't constrain T here

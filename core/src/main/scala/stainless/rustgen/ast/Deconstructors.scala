@@ -35,7 +35,7 @@ object TreeDeconstructor {
       case MissingExpr(tpe) =>
         (NoIdentifiers, NoVariables, NoExpressions, Seq(tpe),
           (_, _, _, tps) => MissingExpr(tps.head))
-      case v @ Variable(id, tpe) =>
+      case v @ Variable(_, _, _) =>
         (NoIdentifiers, Seq(v), NoExpressions, NoTypes,
           (_, vs, _, _) => vs.head)
       case lit: Literal[_] =>
@@ -78,9 +78,9 @@ object TreeDeconstructor {
       case RcClone(expr) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,
           (_, _, es, _) => RcClone(es.head))
-      case RcDeref(expr) =>
+      case RcAsRef(expr) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,
-          (_, _, es, _) => RcDeref(es.head))
+          (_, _, es, _) => RcAsRef(es.head))
     }
   }
 
@@ -265,6 +265,19 @@ object Deconstructors {
     def unapply(e: Expr): Option[(Seq[Expr], Seq[Expr] => Expr)] = {
       val (ids, vs, es, tps, /* flags,*/ builder) = deconstructor.deconstruct(e)
       Some(es, ess => builder(ids, vs, ess, tps /*, flags*/))
+    }
+  }
+
+  object Invocation {
+    def unapply(e: Expr): Option[(Identifier, Seq[Expr], Seq[Expr] => Expr)] = {
+      e match {
+        case FunctionInvocation(fun, args) =>
+          Some(fun, args, args => FunctionInvocation(fun, args))
+        case MethodInvocation(fun, recv, args) =>
+          Some(fun, recv +: args, es => MethodInvocation(fun, es.head, es.tail))
+        case _ =>
+          None
+      }
     }
   }
 }

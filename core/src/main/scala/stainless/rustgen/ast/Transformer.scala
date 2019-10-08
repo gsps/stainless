@@ -17,7 +17,7 @@ trait Transformer {
   }
 
   def transform(vd: ValDef, env: Env): ValDef = {
-    val ValDef(id, tpe /*, flags*/ ) = vd
+    val ValDef(id, tpe, flags) = vd
     val (newId, newTpe) = transform(id, tpe, env)
 
     // var changed = false
@@ -28,7 +28,8 @@ trait Transformer {
     // }
 
     if ((id ne newId) || (tpe ne newTpe) /*|| changed*/ ) {
-      ValDef(newId, newTpe /*, newFlags*/ ).copiedFrom(vd)
+      // ValDef(newId, newTpe, newFlags).copiedFrom(vd)
+      ValDef(newId, newTpe, flags).copiedFrom(vd)
     } else {
       vd
     }
@@ -258,4 +259,31 @@ trait TreeTransformer extends DefinitionTransformer {
     val t1: TreeTransformer.this.type = TreeTransformer.this
     val t2: that.type = that
   }
+}
+
+trait ProgramTransformer {
+  def transform(program: Program): Program
+}
+
+trait SimpleProgramTransformer extends ProgramTransformer {
+  def transform(program: Program): Program = {
+    implicit val oldSyms: Symbols = program.symbols
+    val newSyms = Symbols(
+      transformStructs(oldSyms.structs.values.toSeq),
+      transformEnums(oldSyms.enums.values.toSeq),
+      transformFunctions(oldSyms.functions.values.toSeq),
+      oldSyms.strictTyping
+    )
+    Program(newSyms)
+  }
+
+  def transformStructs(structs: Seq[StructDef])(implicit symbols: Symbols): Seq[StructDef]
+  def transformEnums(enums: Seq[EnumDef])(implicit symbols: Symbols): Seq[EnumDef]
+  def transformFunctions(functions: Seq[FunDef])(implicit symbols: Symbols): Seq[FunDef]
+}
+
+trait IdentityProgramTransformer extends SimpleProgramTransformer {
+  def transformStructs(structs: Seq[StructDef])(implicit symbols: Symbols) = structs
+  def transformEnums(enums: Seq[EnumDef])(implicit symbols: Symbols) = enums
+  def transformFunctions(functions: Seq[FunDef])(implicit symbols: Symbols) = functions
 }

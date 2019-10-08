@@ -29,7 +29,7 @@ object DSL {
   /* Definitions */
 
   implicit class TypeToValDef(tp: Type) {
-    def ::(nm: String): ValDef = ValDef(Identifier(nm), tp)
+    def ::(nm: String): ValDef = ValDef(Identifier(nm), tp, Seq.empty)
   }
 
   def mkStructDef(id: Identifier, fields: Seq[ValDef]): StructDef =

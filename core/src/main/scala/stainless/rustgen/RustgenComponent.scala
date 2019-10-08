@@ -106,7 +106,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)(
 
       val status = Try(gen(sortDefs, funDefs)) match {
         case Failure(exc) =>
-          exc.printStackTrace()
+          // exc.printStackTrace()
           UnsupportedFeature(exc.getMessage())
         case Success(rustProgram) => Translated(rustProgram)
       }

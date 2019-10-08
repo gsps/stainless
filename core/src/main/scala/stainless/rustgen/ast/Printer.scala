@@ -65,6 +65,8 @@ class PrintableChunk private[ast] (implicit val ctx: PrinterContext) {
     lines.appendAll(otherLines)
   }
 
+  def isEmpty: Boolean = lines.head._1.isEmpty
+
   override def toString: String = {
     val rootChunk = PrintableChunk.empty
     rootChunk += this
@@ -113,9 +115,9 @@ object Printer {
   }
 
   protected def ifNonEmpty[T](
-      elements: Seq[T]
-  )(f: Seq[T] => PrintableChunk)(implicit ctx: PrinterContext): PrintableChunk = {
-    if (elements.nonEmpty) f(elements) else p""
+      elements: Iterable[T]
+  )(f: => PrintableChunk)(implicit ctx: PrinterContext): PrintableChunk = {
+    if (elements.nonEmpty) f else p""
   }
 
   protected def separated(sep: String, chunks: Seq[PrintableChunk])(
@@ -144,6 +146,22 @@ object Printer {
       chunks: Seq[PrintableChunk]
   )(implicit ctx: PrinterContext): PrintableChunk =
     separated(",\n", chunks)
+
+  protected def nlAround(chunk: PrintableChunk)(
+      implicit ctx: PrinterContext
+  ): PrintableChunk =
+    p"""
+$chunk
+"""
+
+  protected def nlSeparatedCompact(chunks: Seq[PrintableChunk], n: Int = 1)(
+      implicit ctx: PrinterContext
+  ): PrintableChunk =
+    ifNonEmpty(chunks)(nlAround(nlSeparated(chunks, n)))
+  protected def commanlSeparatedCompact(chunks: Seq[PrintableChunk])(
+      implicit ctx: PrinterContext
+  ): PrintableChunk =
+    ifNonEmpty(chunks)(nlAround(commanlSeparated(chunks)))
 }
 
 class Printer()(implicit symbols: Trees.Symbols) {
@@ -174,23 +192,21 @@ class Printer()(implicit symbols: Trees.Symbols) {
   }
 
   def print(program: Program)(implicit ctx: PrinterContext): PrintableChunk = {
-    val Symbols(structs, enums, functions) = program.symbols
+    val Symbols(structs, enums, functions, _) = program.symbols
+    val structsC = nlSeparatedCompact(structs.values.toSeq.map(print), 2)
+    val enumsC = nlSeparatedCompact(enums.values.toSeq.map(print), 2)
+    val functionsC = nlSeparatedCompact(functions.values.toSeq.map(print), 2)
     p"""// Stainless-generated module
 #![allow(unused_parens)]
 use std::ops::*;
 use std::rc::Rc;
-
-${nlSeparated(structs.values.toSeq.map(print), 2)}
-
-${nlSeparated(enums.values.toSeq.map(print), 2)}
-
-${nlSeparated(functions.values.toSeq.map(print), 2)}
-"""
+${structsC}${enumsC}${functionsC}"""
   }
 
   def print(flag: Flag)(implicit ctx: PrinterContext): PrintableChunk = {
     flag match {
       case Library => p"@library"
+      case RefBinding => p"@refBinding"
     }
   }
 
@@ -206,16 +222,14 @@ ${nlSeparated(functions.values.toSeq.map(print), 2)}
 
   def print(struct: StructDef)(implicit ctx: PrinterContext): PrintableChunk = {
     val inner = ctx.inner
-    p"""struct ${struct.id} {
-${commanlSeparated(struct.fields.map(print(_)(inner)))}
-}"""
+    val fields = commanlSeparatedCompact(struct.fields.map(print(_)(inner)))
+    p"""struct ${struct.id} {$fields}"""
   }
 
   def print(enm: EnumDef)(implicit ctx: PrinterContext): PrintableChunk = {
     val inner = ctx.inner
-    p"""enum ${enm.id} {
-${commanlSeparated(enm.variants.map(print(_)(inner)))}
-}"""
+    val variants = commanlSeparatedCompact(enm.variants.map(print(_)(inner)))
+    p"""enum ${enm.id} {$variants}"""
   }
 
   def print(variant: EnumVariant)(implicit ctx: PrinterContext): PrintableChunk = {
@@ -229,11 +243,18 @@ ${print(fun.body)(ctx.inner)}
   }
 
   def print(vd: ValDef)(implicit ctx: PrinterContext): PrintableChunk = {
-    p"${vd.id}: ${vd.tpe}"
+    val ValDef(id, tpe, flags) = vd
+    if (flags.isEmpty) {
+      p"$id: $tpe"
+    } else {
+      val result = p"($id: $tpe)"
+      for (flag <- flags) result += p" $flag"
+      result
+    }
   }
 
   private def typeArgs(tps: Seq[Type])(implicit ctx: PrinterContext) =
-    ifNonEmpty(tps)(tps => p"::<${commaSeparated(tps.map(print))}>")
+    ifNonEmpty(tps)(p"::<${commaSeparated(tps.map(print))}>")
 
   private def genericType(id: Identifier, tps: Seq[Type])(
       implicit ctx: PrinterContext
@@ -247,8 +268,8 @@ ${print(fun.body)(ctx.inner)}
 
   def print(err: TypingError)(implicit ctx: PrinterContext): PrintableChunk = {
     err match {
-      case ArgumentTypeMismatch(blamed, expected, actual) =>
-        p"argument type $actual doens't match parameter $expected"
+      case ArgumentTypeMismatch(blamed, param, actual) =>
+        p"argument type $actual doesn't match parameter $param"
       case ReturnTypeMismatch(blamed, expected, actual) =>
         p"returned type $actual doesn't match result type $expected"
       case LetTypeMismatch(blamed, expected, actual) =>
@@ -259,7 +280,7 @@ ${print(fun.body)(ctx.inner)}
         p"branch result type $actual doesn't match expected type $expected"
       case PatternTypeMismatch(blamed, expected) =>
         p"pattern doesn't match scrutinee type $expected"
-      case TypeMatchMismatch(actual, expected) =>
+      case TypeMatchMismatch(blamed, actual, expected) =>
         p"type $actual doesn't match shape $expected"
     }
   }
@@ -286,7 +307,7 @@ ${print(fun.body)(ctx.inner)}
     expr match {
       case MissingExpr(tpe) => p"<empty tree : $tpe>"
 
-      case Variable(id, _) => p"$id"
+      case Variable(id, _, _) => p"$id"
 
       case expr: Literal[_] => print(expr)
 
@@ -319,8 +340,8 @@ $body"""
         val MatchExpr(scrutinee, cases) = expr
         val inner = ctx.inner
         p"""match $scrutinee {
-  ${commanlSeparated(cases.map(print(_)(inner)))}
-  }"""
+${commanlSeparated(cases.map(print(_)(inner)))}
+}"""
 
       case FunctionInvocation(fun, args) =>
         p"$fun(${commaSeparated(args.map(print))})"
@@ -329,18 +350,18 @@ $body"""
 
       case IfExpr(cond, thenn, elze) =>
         p"""if $cond {
-        ${print(thenn)(ctx.inner)}
-      } else {
-        ${print(elze)(ctx.inner)}
-      }"""
+${print(thenn)(ctx.inner)}
+} else {
+${print(elze)(ctx.inner)}
+}"""
 
       case Error(_, description) => p"panic!(${StrLiteral(description)})"
 
-      case Reference(expr) => p"&($expr)"
+      case Reference(expr) => p"(&$expr)"
 
       case RcNew(expr)   => p"Rc::new($expr)"
       case RcClone(expr) => p"($expr).clone()"
-      case RcDeref(expr) => p"($expr).asRef()"
+      case RcAsRef(expr) => p"($expr).asRef()"
     }
   }
 
@@ -375,6 +396,9 @@ $body"""
       case TuplePattern(_, subPatterns) =>
         p"(${commaSeparated(subPatterns.map(print))})"
     }
-    pat.binder.map(vd => p"${vd.id} @ $chunk").getOrElse(chunk)
+    pat.binder map { vd =>
+      val ref = if (vd.flags.contains(RefBinding)) p"ref " else p""
+      p"${ref}${vd.id} @ $chunk"
+    } getOrElse(chunk)
   }
 }

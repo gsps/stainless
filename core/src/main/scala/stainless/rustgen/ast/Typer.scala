@@ -4,12 +4,13 @@ package stainless
 package rustgen
 package ast
 
+import Trees._
+
 import scala.annotation.tailrec
 
 import collection.mutable.{Map => MutableMap}
 
-class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
-  import Trees._
+class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   import TypingError._
 
   protected implicit val symbols: Symbols = _symbols
@@ -40,15 +41,15 @@ class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
   // Erasure for relaxed typing.
   // TODO: Replace by generic type transform
   protected def erased(tpe: Type): Type = {
-    if (isRelaxed) {
+    if (isStrict) {
+      tpe
+    } else {
       tpe match {
         case TupleType(tps) => TupleType(tps.map(erased))
         case RcType(tpe)    => tpe
         case RefType(tpe)   => tpe
         case _              => tpe
       }
-    } else {
-      tpe
     }
   }
 
@@ -89,7 +90,7 @@ class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
 
   protected val `?T` = HoleType(Identifier("T"))
 
-  protected def ifTypeMatch(ground: Type, shape: Type)(f: Type => Type): Type = {
+  protected def ifTypeMatch(ground: Type, shape: Type, blamed: Tree)(f: Type => Type): Type = {
     var instT: Option[Type] = None
     def mtch(ground: Type, shape: Type): Boolean = {
       (ground, shape) match {
@@ -103,7 +104,7 @@ class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
       }
     }
     if (mtch(ground, shape) && instT.isDefined) f(instT.get)
-    else TypeMatchMismatch(ground, shape).toType
+    else TypeMatchMismatch(blamed, ground, shape).toType
   }
 
   /* Actual typing rules */
@@ -123,7 +124,7 @@ class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
         val fd = symbols.getFunction(id)
         val optErrorTpe = (fd.params zip argTps) collectFirst {
           case (param, argTpe) if !conformsTo(argTpe, param.tpe) =>
-            ArgumentTypeMismatch(expr, param.tpe, argTpe).toType
+            ArgumentTypeMismatch(expr, param, argTpe).toType
         }
         optErrorTpe getOrElse fd.returnType
       }
@@ -132,7 +133,7 @@ class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
     expr match {
       case MissingExpr(tpe) =>
         tpe
-      case Variable(id, tpe) =>
+      case Variable(_, tpe, _) =>
         tpe
       case UnitLiteral() =>
         UnitType()
@@ -144,11 +145,13 @@ class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
         StrType()
       case Struct(id, tps, _) =>
         ifGoodTypes(tps) { tps =>
+          // TODO: Check against expected types
           StructType(id, tps)
         }
 
       case Enum(id, tps, _) =>
         ifGoodTypes(tps) { tps =>
+          // TODO: Check against expected types
           EnumType(symbols.getEnumVariant(id).enm, tps)
         }
       case Tuple(exprs) =>
@@ -191,30 +194,32 @@ class Typer(_symbols: Trees.Symbols, isRelaxed: Boolean) {
 
       /* Lower-level IR */
 
+      // NOTE: None of the trees below should exist in programs with relaxed typing semantics.
+      // However, during program transformations we may produce such lower-level trees and subsequently
+      // call the high-level program's typer to compute their types.
+
       case Reference(expr) =>
-        assert(!isRelaxed)
         ifWellTyped(expr) { tpe =>
           RefType(tpe)
         }
 
       /* Reference-counted boxes */
 
-      case RcNew(expr) =>
-        assert(!isRelaxed)
-        ifWellTyped(expr) { tpe =>
+      case RcNew(arg) =>
+        ifWellTyped(arg) { tpe =>
           RcType(tpe)
         }
-      case RcClone(expr) =>
-        assert(!isRelaxed)
-        ifWellTyped(expr) { tpe =>
-          ifTypeMatch(tpe, RefType(RcType(`?T`))) { argTpe =>
+      case RcClone(arg) =>
+        ifWellTyped(arg) { tpe =>
+          ifTypeMatch(tpe, RefType(RcType(`?T`)), expr) { argTpe =>
             RefType(RcType(argTpe))
           }
         }
-      case RcDeref(expr) =>
-        assert(!isRelaxed)
-        ifWellTyped(expr) { tpe =>
-          RcType(tpe)
+      case RcAsRef(arg) =>
+        ifWellTyped(arg) { tpe =>
+          ifTypeMatch(tpe, RefType(RcType(`?T`)), expr) { argTpe =>
+            RefType(tpe)
+          }
         }
     }
   }

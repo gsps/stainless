@@ -4,7 +4,7 @@ package stainless
 package rustgen
 package ast
 
-import inox.utils.{Lazy, Positioned}
+import inox.utils.{Lazy, Position, Positioned}
 
 object Trees {
   type Identifier = stainless.Identifier
@@ -19,8 +19,6 @@ object Trees {
   /* == Common IR == */
 
   case class Program(symbols: Symbols) {
-    val typer = new Typer(symbols, isRelaxed = true)
-
     def show(): String =
       new Printer()(symbols).show(this)
   }
@@ -28,7 +26,8 @@ object Trees {
   case class Symbols(
       structs: Map[Identifier, StructDef],
       enums: Map[Identifier, EnumDef],
-      functions: Map[Identifier, FunDef]
+      functions: Map[Identifier, FunDef],
+      strictTyping: Boolean
   ) {
     @inline def enumVariants: Map[Identifier, EnumVariant] = _enumVariants.get
     private[this] val _enumVariants: Lazy[Map[Identifier, EnumVariant]] =
@@ -42,6 +41,24 @@ object Trees {
       enumVariants.get(id).getOrElse(throw EnumLookupException(id))
     def getFunction(id: Identifier): FunDef =
       functions.get(id).getOrElse(throw FunctionLookupException(id))
+
+    val typer = new Typer(this, isStrict = strictTyping)
+  }
+
+  object Symbols {
+    def apply(
+        structs: Seq[StructDef],
+        enums: Seq[EnumDef],
+        functions: Seq[FunDef],
+        strictTyping: Boolean
+    ): Symbols = {
+      Symbols(
+        structs.map(x => x.id -> x).toMap,
+        enums.map(x => x.id -> x).toMap,
+        functions.map(x => x.id -> x).toMap,
+        strictTyping
+      )
+    }
   }
 
   sealed trait Tree extends Positioned {
@@ -57,6 +74,7 @@ object Trees {
   sealed abstract class Flag(val name: String) extends Tree
 
   object Library extends Flag("library")
+  object RefBinding extends Flag("refBinding")
 
   /* Definitions */
 
@@ -75,8 +93,33 @@ object Trees {
       flags: Seq[Flag]
   ) extends Definition
 
-  case class ValDef(id: Identifier, tpe: Type) extends Definition {
-    def toVariable: Variable = Variable(id, tpe)
+  sealed class ValDef(val v: Variable) extends Definition {
+    @inline def id = v.id
+    @inline def tpe = v.tpe
+    @inline def flags = v.flags
+
+    override def setPos(pos: Position): ValDef.this.type = {
+      v.setPos(pos)
+      super.setPos(pos)
+    }
+
+    @inline def toVariable: Variable = v
+
+    override def equals(that: Any): Boolean = that match {
+      case other: ValDef => v.equals(other.v)
+      case _ => false
+    }
+    override def hashCode: Int = v.hashCode
+
+    override def toString: String = s"ValDef($id, $tpe, $flags)"
+
+    def copy(id: Identifier = id, tpe: Type = tpe, flags: Seq[Flag] = flags): ValDef =
+      new ValDef(v.copy(id = id, tpe = tpe, flags = flags)).copiedFrom(this)
+  }
+
+  object ValDef {
+    def apply(id: Identifier, tpe: Type, flags: Seq[Flag] = Seq.empty) = new ValDef(Variable(id, tpe, flags))
+    def unapply(vd: ValDef): Option[(Identifier, Type, Seq[Flag])] = Some((vd.id, vd.tpe, vd.flags))
   }
 
   /* Types */
@@ -102,7 +145,9 @@ object Trees {
     def toType: Type = ErrorType(this)
   }
   object TypingError {
-    case class ArgumentTypeMismatch(blamed: Tree, expected: Type, actual: Type) extends TypingError
+    case class ArgumentTypeMismatch(blamed: Tree, param: ValDef, actual: Type) extends TypingError {
+      val expected = param.tpe
+    }
     case class ReturnTypeMismatch(blamed: Tree, expected: Type, actual: Type) extends TypingError
     case class LetTypeMismatch(blamed: Tree, expected: Type, actual: Type) extends TypingError
     case class ConditionTypeMismatch(blamed: Tree, actual: Type) extends TypingError {
@@ -112,9 +157,7 @@ object Trees {
     case class PatternTypeMismatch(blamed: Tree, expected: Type) extends TypingError {
       val actual = NoType
     }
-    case class TypeMatchMismatch(actual: Type, expected: Type) extends TypingError {
-      val blamed = NoType
-    }
+    case class TypeMatchMismatch(blamed: Tree, actual: Type, expected: Type) extends TypingError
   }
 
   sealed abstract class PrimitiveType(val isInt: Boolean) extends Type
@@ -132,12 +175,15 @@ object Trees {
 
   /* Expressions */
 
-  sealed trait Expr extends Tree
+  sealed trait Expr extends Tree {
+    def getType(implicit symbols: Symbols): Type =
+      symbols.typer.getType(this)
+  }
 
   sealed case class MissingExpr(tpe: Type) extends Expr
 
-  case class Variable(id: Identifier, tpe: Type) extends Expr {
-    def toVal: ValDef = ValDef(id, tpe)
+  case class Variable(id: Identifier, tpe: Type, flags: Seq[Flag]) extends Expr {
+    def toVal: ValDef = new ValDef(this)
   }
 
   sealed trait Literal[+T] extends Expr {
@@ -163,6 +209,9 @@ object Trees {
   sealed trait Pattern extends Tree {
     def binder: Option[ValDef]
     def subPatterns: Seq[Pattern]
+
+    private def subBinders = subPatterns.flatMap(_.binders).toSet
+    def binders: Set[ValDef] = subBinders ++ binder.toSet
   }
   case class WildcardPattern(binder: Option[ValDef]) extends Pattern {
     val subPatterns = Seq()
@@ -198,7 +247,7 @@ object Trees {
 
   case class RcType(tpe: Type) extends Type
 
-  case class RcNew(expr: Expr) extends Expr
-  case class RcClone(expr: Expr) extends Expr
-  case class RcDeref(expr: Expr) extends Expr
+  case class RcNew(arg: Expr) extends Expr
+  case class RcClone(arg: Expr) extends Expr
+  case class RcAsRef(arg: Expr) extends Expr
 }

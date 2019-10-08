@@ -14,17 +14,15 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
   def apply(sorts: Seq[st.ADTSort], functions: Seq[st.FunDef]): rt.Program = {
     def checkWellTyped(program: rt.Program) = {
       implicit val symbols: rt.Symbols = program.symbols
-      val illtyped = program.typer.checkWellTyped()
+      val illtyped = symbols.typer.checkWellTyped()
       if (illtyped.nonEmpty) {
         val lines = illtyped map { id =>
           val fd = program.symbols.getFunction(id)
-          program.typer.getType(fd) match {
-            case rt.ErrorType(reason) => s"  ${fd.id.fullName} @${fd.getPos}: ${reason.show}"
-            case _                    => assert(false)
-          }
+          val rt.ErrorType(reason) = symbols.typer.getType(fd)
+          s"    ${fd.id.fullName} @${reason.blamed.getPos}: ${reason.show}"
         }
         ctx.reporter.internalError(
-          s"Extraction phase produced ill-typed functions:\n  ${lines.mkString("\n  ")}"
+          s"Extraction phase produced ill-typed functions:\n${lines.mkString("\n")}\n\n${program.show}"
         )
       }
     }
@@ -34,14 +32,22 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
       val newSymbols = rt.Symbols(
         symbols.structs,
         symbols.enums,
-        symbols.functions.filterNot(_._2.flags.contains(rt.Library))
+        symbols.functions.filterNot(_._2.flags.contains(rt.Library)),
+        symbols.strictTyping
       )
       rt.Program(newSymbols)
     }
 
     val extraction = new ExtractionPhase(symbols)
-    val extractionProgram = extraction(sorts, functions)
-    checkWellTyped(extractionProgram)
-    trim(extractionProgram)
+    val extractedProgram = extraction(sorts, functions)
+    checkWellTyped(extractedProgram)
+
+    val matchFlattenedProgram = new MatchFlattening().transform(extractedProgram)
+    checkWellTyped(matchFlattenedProgram)
+
+    val typeLoweredProgram = new TypeLowering().transform(matchFlattenedProgram)
+    checkWellTyped(typeLoweredProgram)
+
+    trim(typeLoweredProgram)
   }
 }
