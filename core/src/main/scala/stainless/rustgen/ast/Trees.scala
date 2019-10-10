@@ -19,8 +19,8 @@ object Trees {
   /* == Common IR == */
 
   case class Program(symbols: Symbols) {
-    def show(): String =
-      new Printer()(symbols).show(this)
+    def show(opts: PrinterOptions = PrinterOptions.default): String =
+      new Printer(opts)(symbols).show(this)
   }
 
   case class Symbols(
@@ -65,8 +65,8 @@ object Trees {
     def copiedFrom(other: Positioned): this.type =
       setPos(other)
 
-    def show(implicit symbols: Symbols): String =
-      new Printer().show(this)
+    def show(opts: PrinterOptions = PrinterOptions.default)(implicit symbols: Symbols): String =
+      new Printer(opts).show(this)
   }
 
   /* Flags */

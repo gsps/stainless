@@ -6,10 +6,18 @@ package generator
 
 object DebugSectionRustgenGenerator extends inox.DebugSection("rustgen-generator")
 
+object optRustgenPrintTypes
+    extends inox.FlagOptionDef("rustgen-print-types", false)
+
 // A stateful processor of Stainless ADTSorts and FunDefs that produces rust trees.
 class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
   import stainless.{trees => st}
   import ast.{Trees => rt}
+
+  val debugPrinterOpts: ast.PrinterOptions = {
+    val printTypes = ctx.options.findOptionOrDefault(optRustgenPrintTypes)
+    ast.PrinterOptions(printTypes)
+  }
 
   def apply(sorts: Seq[st.ADTSort], functions: Seq[st.FunDef]): rt.Program = {
     def checkWellTyped(program: rt.Program) = {
@@ -19,10 +27,11 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
         val lines = illtyped map { id =>
           val fd = program.symbols.getFunction(id)
           val rt.ErrorType(reason) = symbols.typer.getType(fd)
-          s"    ${fd.id.fullName} @${reason.blamed.getPos}: ${reason.show}"
+          s"    ${fd.id.fullName} @${reason.blamed.getPos}: ${reason.show()}"
         }
+        val programStr = program.show(debugPrinterOpts)
         ctx.reporter.internalError(
-          s"Extraction phase produced ill-typed functions:\n${lines.mkString("\n")}\n\n${program.show}"
+          s"Extraction phase produced ill-typed functions:\n${lines.mkString("\n")}\n\n$programStr"
         )
       }
     }

@@ -272,7 +272,7 @@ object Deconstructors {
     def unapply(e: Expr): Option[(Identifier, Seq[Expr], Seq[Expr] => Expr)] = {
       e match {
         case FunctionInvocation(fun, args) =>
-          Some(fun, args, args => FunctionInvocation(fun, args))
+          Some(fun, args, es => FunctionInvocation(fun, es))
         case MethodInvocation(fun, recv, args) =>
           Some(fun, recv +: args, es => MethodInvocation(fun, es.head, es.tail))
         case _ =>

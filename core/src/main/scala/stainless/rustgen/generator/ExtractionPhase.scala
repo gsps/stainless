@@ -168,6 +168,8 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
 
       case st.Annotated(body, _) => translate(body)
 
+      case st.NoTree(tpe) => rt.MissingExpr(translate(tpe))
+
       case _ =>
         throw new NotImplementedError(s"Unsupported expression '$expr' (${expr.getClass})")
     }).copiedFrom(expr)

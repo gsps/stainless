@@ -6,6 +6,11 @@ package ast
 
 import scala.collection.mutable.{ArrayBuffer, StringBuilder}
 
+case class PrinterOptions(val printTypes: Boolean = false)
+object PrinterOptions {
+  val default = PrinterOptions()
+}
+
 class PrinterContext(val printer: Printer, val indentLevel: Int) {
   def inner = new PrinterContext(printer, indentLevel + PrinterContext.indentStep)
 
@@ -164,7 +169,7 @@ $chunk
     ifNonEmpty(chunks)(nlAround(commanlSeparated(chunks)))
 }
 
-class Printer()(implicit symbols: Trees.Symbols) {
+class Printer(opts: PrinterOptions)(implicit symbols: Trees.Symbols) {
   import Printer._
   import Trees._
   import TypingError._
@@ -279,7 +284,7 @@ ${print(fun.body)(ctx.inner)}
       case MergeTypeMismatch(blamed, expected, actual) =>
         p"branch result type $actual doesn't match expected type $expected"
       case PatternTypeMismatch(blamed, expected) =>
-        p"pattern doesn't match scrutinee type $expected"
+        p"pattern $blamed doesn't match scrutinee type $expected"
       case TypeMatchMismatch(blamed, actual, expected) =>
         p"type $actual doesn't match shape $expected"
     }
@@ -304,7 +309,7 @@ ${print(fun.body)(ctx.inner)}
   }
 
   def print(expr: Expr)(implicit ctx: PrinterContext): PrintableChunk = {
-    expr match {
+    val result = expr match {
       case MissingExpr(tpe) => p"<empty tree : $tpe>"
 
       case Variable(id, _, _) => p"$id"
@@ -360,9 +365,13 @@ ${print(elze)(ctx.inner)}
       case Reference(expr) => p"(&$expr)"
 
       case RcNew(expr)   => p"Rc::new($expr)"
-      case RcClone(expr) => p"($expr).clone()"
-      case RcAsRef(expr) => p"($expr).asRef()"
+      case RcClone(expr) => p"$expr.clone()"
+      case RcAsRef(expr) => p"$expr.as_ref()"
     }
+    if (opts.printTypes)
+      p"($result : ${expr.getType})"
+    else
+      result
   }
 
   def print[T](lit: Literal[T])(implicit ctx: PrinterContext): PrintableChunk = {

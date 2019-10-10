@@ -38,23 +38,32 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
 
   /* Typing primitives */
 
-  // Erasure for relaxed typing.
+  // Erasure of both `RefType`s and `RcType`s (for relaxed typing before `TypeLowering`).
   // TODO: Replace by generic type transform
-  protected def erased(tpe: Type): Type = {
+  protected def fullyErased(tpe: Type): Type = {
     if (isStrict) {
       tpe
     } else {
       tpe match {
-        case TupleType(tps) => TupleType(tps.map(erased))
-        case RcType(tpe)    => tpe
-        case RefType(tpe)   => tpe
+        case TupleType(tps) => TupleType(tps.map(fullyErased)).copiedFrom(tpe)
+        case RcType(tpe)    => fullyErased(tpe)
+        case RefType(tpe)   => fullyErased(tpe)
         case _              => tpe
       }
     }
   }
 
+  // Erasure of top-level `RefType`s only (for pattern typing)
+  // TODO: Replace by generic type transform
+  protected def refErased(tpe: Type): Type = {
+    tpe match {
+      case RefType(tpe)   => refErased(tpe)
+      case _              => tpe
+    }
+  }
+
   protected def conformsTo(actual: Type, expected: Type): Boolean = {
-    erased(actual) == erased(expected)
+    fullyErased(actual) == fullyErased(expected)
   }
 
   /* Auxiliary functions that bubble up `ErrorType`s */
@@ -98,7 +107,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
         case (TupleType(tps1), TupleType(tps2)) => (tps1 zip tps2).forall(tt => mtch(tt._1, tt._2))
         case (RefType(tpe1), RefType(tpe2))     => mtch(tpe1, tpe2)
         case (RcType(tpe1), RcType(tpe2))       => mtch(tpe1, tpe2)
-        case (tpe1, `?T`) if instT.isDefined    => false
+        case (tpe1, `?T`) if instT.isDefined    => instT.get == tpe1
         case (tpe1, `?T`)                       => instT = Some(tpe1); true
         case (tpe1, tpe2)                       => conformsTo(tpe1, tpe2)
       }
@@ -122,6 +131,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
     def invocation(expr: Expr, id: Identifier, args: Seq[Expr]): Type = {
       ifWellTyped(args) { argTps =>
         val fd = symbols.getFunction(id)
+        // TODO: Also check number of arguments
         val optErrorTpe = (fd.params zip argTps) collectFirst {
           case (param, argTpe) if !conformsTo(argTpe, param.tpe) =>
             ArgumentTypeMismatch(expr, param, argTpe).toType
@@ -212,13 +222,13 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       case RcClone(arg) =>
         ifWellTyped(arg) { tpe =>
           ifTypeMatch(tpe, RefType(RcType(`?T`)), expr) { argTpe =>
-            RefType(RcType(argTpe))
+            RcType(argTpe)
           }
         }
       case RcAsRef(arg) =>
         ifWellTyped(arg) { tpe =>
           ifTypeMatch(tpe, RefType(RcType(`?T`)), expr) { argTpe =>
-            RefType(tpe)
+            RefType(argTpe)
           }
         }
     }
@@ -227,18 +237,29 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   protected def computeType(expr: MatchExpr): Type = {
     val MatchExpr(scrutinee, cases) = expr
 
-    def checkBinder(binder: Option[ValDef], scrutineeTpe: Type)(
+    def checkBinder(binder: Option[ValDef], scrutTpe: Type)(
         rest: => Option[TypingError]
     ): Option[TypingError] = {
       binder collect {
-        case vd if !conformsTo(vd.tpe, scrutineeTpe) =>
-          Some(LetTypeMismatch(vd, scrutineeTpe, vd.tpe))
+        case vd if !conformsTo(vd.tpe, scrutTpe) =>
+          Some(LetTypeMismatch(vd, scrutTpe, vd.tpe))
       } getOrElse (rest)
     }
 
-    def checkPattern(pat: Pattern, scrutineeTpe: Type): Option[TypingError] = {
+    def checkPattern(pat: Pattern, unerasedScrutTpe: Type): Option[TypingError] = {
+      // Note that we simply erase `RefType`s during pattern matching regardless of
+      // whether the typer is in strict mode to emulate Rust's matching behavior:
+      // Rust's pattern matcher automatically adapts its binding behavior when
+      // matching against a reference-typed scrutinee. In effect, matching on a
+      // `&T`-typed scrutinee is equivalent to matching on a `T`-typed scrutinee,
+      // except that binders in the patterns will become *references* to the matched
+      // fields, rather than moving or copying the fields.
+      // As part of the `TypeLowering` phase, which introduces `RefType`s, pattern
+      // binders' types are therefore also rewritten.
+      val scrutTpe = refErased(unerasedScrutTpe)
+
       def mismatch =
-        Some(PatternTypeMismatch(pat, scrutineeTpe))
+        Some(PatternTypeMismatch(pat, scrutTpe))
       def checkRest(subPatterns: Seq[Pattern], subTps: Seq[Type]) =
         (subPatterns zip subTps)
           .map(t => checkPattern(t._1, t._2))
@@ -250,18 +271,18 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
           None // wildcard can subsume any expected type
 
         case LiteralPattern(binder, lit) =>
-          checkBinder(binder, scrutineeTpe) {
+          checkBinder(binder, scrutTpe) {
             val litTpe = ifWellTyped(lit)(identity)
             assert(!litTpe.isError)
-            if (!conformsTo(litTpe, scrutineeTpe))
+            if (!conformsTo(litTpe, scrutTpe))
               mismatch
             else
               None
           }
 
         case StructPattern(binder, id, subPatterns) =>
-          checkBinder(binder, scrutineeTpe) {
-            scrutineeTpe match {
+          checkBinder(binder, scrutTpe) {
+            scrutTpe match {
               case StructType(structId, tps) =>
                 assert(tps.isEmpty)
                 val struct = symbols.getStruct(structId)
@@ -282,8 +303,8 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
           }
 
         case TuplePattern(binder, subPatterns) =>
-          checkBinder(binder, scrutineeTpe) {
-            scrutineeTpe match {
+          checkBinder(binder, scrutTpe) {
+            scrutTpe match {
               case TupleType(scrutineeTps) if scrutineeTps.size == subPatterns.size =>
                 checkRest(subPatterns, scrutineeTps)
               case _ =>
@@ -293,8 +314,8 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       }
     }
 
-    def caseType(cse: MatchCase, scrutineeTpe: Type): Type = {
-      checkPattern(cse.pattern, scrutineeTpe).map(_.toType).getOrElse {
+    def caseType(cse: MatchCase, scrutTpe: Type): Type = {
+      checkPattern(cse.pattern, scrutTpe).map(_.toType).getOrElse {
         ifWellTyped(cse.optGuard.getOrElse(BoolLiteral(true))) { guardTpe =>
           if (!conformsTo(guardTpe, BoolType()))
             ConditionTypeMismatch(cse, guardTpe).toType
@@ -304,8 +325,8 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       }
     }
 
-    ifWellTyped(scrutinee) { scrutineeTpe =>
-      ifGoodTypes(cases.map(cse => caseType(cse, scrutineeTpe))) { caseTps =>
+    ifWellTyped(scrutinee) { scrutTpe =>
+      ifGoodTypes(cases.map(cse => caseType(cse, scrutTpe))) { caseTps =>
         val expected = caseTps.head
         val optBadCase = (cases zip caseTps) find {
           case (cse, caseTpe) => !conformsTo(caseTpe, expected)

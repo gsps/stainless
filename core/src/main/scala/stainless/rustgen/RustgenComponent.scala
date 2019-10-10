@@ -84,7 +84,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)(
 
       {
         val programFile = new File(outDir, s"stainlessExport.rs")
-        val programContents = program.show
+        val programContents = program.show()
         Files.write(programFile.toPath, programContents.getBytes(StandardCharsets.UTF_8))
       }
     }
