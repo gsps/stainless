@@ -18,8 +18,8 @@ import scala.language.existentials
 
 object DebugSectionRustgen extends inox.DebugSection("rustgen")
 
-object optRustgenOutDir
-    extends inox.StringOptionDef("rustgen-out-dir", "", "A directory to output rust sources into.")
+object optRustgenOutPath
+    extends inox.StringOptionDef("rustgen-out", "", "The file to output the rust program into.")
 
 /**
   * Rustgen Component
@@ -76,16 +76,14 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)(
 
     val gen = new generator.Generator(context, symbols)
 
-    def outputProgram(outDirPath: String, program: RustProgram): Unit = {
-      val outDir = new File(outDirPath).getAbsoluteFile
-      reporter.info(s"Outputting program to $outDir")
-      outDir.mkdirs()
-      assert(outDir.isDirectory)
+    def outputProgram(outputPath: String, program: RustProgram): Unit = {
+      val outputFile = new File(outputPath).getAbsoluteFile
+      reporter.info(s"Outputting program to $outputFile")
+      assert(outputFile.getParentFile.exists)
 
       {
-        val programFile = new File(outDir, s"stainlessExport.rs")
         val programContents = program.show()
-        Files.write(programFile.toPath, programContents.getBytes(StandardCharsets.UTF_8))
+        Files.write(outputFile.toPath, programContents.getBytes(StandardCharsets.UTF_8))
       }
     }
 
@@ -151,11 +149,11 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)(
       }
     }
 
-    val result = tryRunGenerator()
+    val genResult = tryRunGenerator()
 
-    result.status match {
+    genResult.status match {
       case Translated(rustProgram) =>
-        context.options.findOption(optRustgenOutDir) foreach {
+        context.options.findOption(optRustgenOutPath) foreach {
           outputProgram(_, rustProgram)
         }
       case _ =>
@@ -164,7 +162,7 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)(
     Future.successful(new RustgenAnalysis {
       override val program = p
       override val sources = sorts.toSet ++ functions.toSet
-      override val results = Seq(result)
+      override val result = genResult
     })
   }
 }

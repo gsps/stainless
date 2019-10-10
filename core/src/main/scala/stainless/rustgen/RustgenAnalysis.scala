@@ -9,9 +9,9 @@ trait RustgenAnalysis extends AbstractAnalysis {
 
   val program: StainlessProgram
   val sources: Set[Identifier]
-  val results: Seq[Result]
+  val result: Result
 
-  private lazy val records = results map { case Result(status, time) =>
+  private lazy val records = Seq(result) map { case Result(status, time) =>
     val textStatus = status match {
       case RustgenRun.UnsupportedFeature(error) => RustgenReport.UnsupportedFeature(error)
       case RustgenRun.Translated(rustProgram) => RustgenReport.Translated()

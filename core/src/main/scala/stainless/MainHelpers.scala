@@ -52,7 +52,7 @@ trait MainHelpers extends inox.MainHelpers { self =>
     frontend.optBatchedProgram -> Description(General, "Process the whole program together, skip dependency analysis"),
     frontend.optKeep -> Description(General, "Keep library objects marked by @keep(g) for some g in g1,g2,... (implies --batched)"),
     utils.Caches.optCacheDir -> Description(General, "Specify the directory in which cache files should be stored"),
-    rustgen.optRustgenOutDir -> Description(Rustgen, "Specify the directory in which rustgen output files should be stored"),
+    rustgen.optRustgenOutPath -> Description(Rustgen, "Specify the directory in which rustgen output files should be stored"),
     rustgen.generator.optRustgenPrintTypes -> Description(Rustgen, "Print types of all AST nodes in debug output"),
   ) ++ MainHelpers.components.map { component =>
     val option = inox.FlagOptionDef(component.name, default = false)
