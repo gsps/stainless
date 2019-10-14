@@ -436,8 +436,18 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols) extends
         symbols.getFunction(method).params.map(_.tpe)
       case IfExpr(_, _, _) =>
         Seq(BoolType(), expectedTpe, expectedTpe)
-      case MatchExpr(_, _) =>
-        subExprs.map(_ => NoType)
+
+      case MatchExpr(_, cases) =>
+        def patTps(pat: Pattern): Seq[Type] = {
+          pat match {
+            case LiteralPattern(_, _) => Seq(NoType)
+            case _ => Seq()
+          }
+        }
+        def caseTps(cse: MatchCase): Seq[Type] = {
+          cse.optGuard.map(_ => BoolType()).toSeq ++ Seq(expectedTpe) ++ patTps(cse.pattern)
+        }
+        Seq(NoType) ++ cases.flatMap(caseTps)
 
       /* Lower-level IR */
 
