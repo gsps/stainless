@@ -339,3 +339,125 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
     }
   }
 }
+
+// TODO: Factor out the common parts in transform(Expr, Env) with DefinitionTransformer?
+abstract class TypedDefinitionTransformer(implicit val symbols: Symbols) extends DefinitionTransformer {
+  trait EnvWithExpected {
+    val expectedTpe: Type
+    def withExpected(expectedTpe: Type): Env
+  }
+  type Env <: EnvWithExpected
+  def initEnv: Env
+
+  // NOTE: For the purpose of this transformer we consider NoType as a wildcard, that is,
+  // any type other than ErrorType conforms to it.
+  def noExpectedType: Type = NoType
+
+  override def transform(fd: FunDef): FunDef = {
+    val defaultEnv = initEnv
+
+    FunDef(
+      transform(fd.id, defaultEnv),
+      // fd.tparams map (transform(_, defaultEnv)),
+      fd.params map (transform(_, defaultEnv)),
+      transform(fd.returnType, defaultEnv),
+      transform(fd.body, defaultEnv.withExpected(fd.returnType)),
+      fd.flags // fd.flags map (transform(_, defaultEnv))
+    ).copiedFrom(fd)
+  }
+
+  override def transform(e: Expr, env: Env): Expr = {
+    val (ids, vs, es, tps /*, flags*/, builder) = TreeDeconstructor.deconstruct(e)
+    val envWithoutExpected = env.withExpected(NoType)
+    val expectedTps = getExpectedTypes(e, es, env.expectedTpe)
+    assert(es.size == expectedTps.size)
+
+    var changed = false
+
+    val newIds = for (id <- ids) yield {
+      val newId = transform(id, envWithoutExpected)
+      if (id ne newId) changed = true
+      newId
+    }
+
+    val newVs = for (v <- vs) yield {
+      val vd = v.toVal
+      val newVd = transform(vd, envWithoutExpected)
+      if (vd ne newVd) changed = true
+      newVd.toVariable
+    }
+
+    val newEs = for ((e, expectedTpe) <- es.zip(expectedTps)) yield {
+      val newE = transform(e, env.withExpected(expectedTpe))
+      if (e ne newE) changed = true
+      newE
+    }
+
+    val newTps = for (tp <- tps) yield {
+      val newTp = transform(tp, envWithoutExpected)
+      if (tp ne newTp) changed = true
+      newTp
+    }
+
+    // val newFlags = for (flag <- flags) yield {
+    //   val newFlag = transform(flag, envWithoutExpected)
+    //   if (flag ne newFlag) changed = true
+    //   newFlag
+    // }
+
+    if (changed) {
+      builder(newIds, newVs, newEs, newTps /*, newFlags*/ ).copiedFrom(e)
+    } else {
+      e
+    }
+  }
+
+  protected def getExpectedTypes(expr: Expr, subExprs: Seq[Expr], expectedTpe: Type): Seq[Type] = {
+    expr match {
+      case Struct(id, tps, _) =>
+        // TODO: Get TypedStructDef to ensure field types are instantiated
+        assert(tps.isEmpty)
+        symbols.getStruct(id).fields.map(_.tpe)
+      case Enum(id, tps, _) =>
+        // TODO: Get TypedEnumDef to ensure field types are instantiated
+        assert(tps.isEmpty)
+        symbols.getEnumVariant(id).fields.map(_.tpe)
+      case Tuple(args) =>
+        expectedTpe match {
+          case TupleType(tps) => tps
+          case _ => args.map(_ => NoType)
+        }
+      case Let(vd, _, _) =>
+        Seq(vd.tpe, expectedTpe)
+      case FunctionInvocation(fun, _) =>
+        // TODO: Get TypedFunDef to ensure parameter type are instantiated
+        symbols.getFunction(fun).params.map(_.tpe)
+      case MethodInvocation(method, _, _) =>
+        symbols.getFunction(method).params.map(_.tpe)
+      case IfExpr(_, _, _) =>
+        Seq(BoolType(), expectedTpe, expectedTpe)
+      case MatchExpr(_, _) =>
+        subExprs.map(_ => NoType)
+
+      /* Lower-level IR */
+
+      case Reference(_) =>
+        Seq(expectedTpe match {
+          case RefType(tpe) => tpe
+          case _ => NoType
+        })
+      case RcNew(_) =>
+        Seq(expectedTpe match {
+          case RcType(tpe) => tpe
+          case _ => NoType
+        })
+      case RcAsRef(_) =>
+        Seq(expectedTpe match {
+          case RefType(RcType(tpe)) => expectedTpe
+          case _ => NoType
+        })
+
+      case _ => Seq.empty
+    }
+  }
+}
