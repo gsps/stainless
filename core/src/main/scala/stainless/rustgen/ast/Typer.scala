@@ -213,6 +213,13 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
           RefType(tpe)
         }
 
+      case Dereference(arg) =>
+        ifWellTyped(arg) { tpe =>
+          ifTypeMatch(tpe, RefType(`?T`), expr) { argTpe =>
+            argTpe
+          }
+        }
+
       /* Reference-counted boxes */
 
       case RcNew(arg) =>
@@ -455,6 +462,11 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols) extends
         Seq(expectedTpe match {
           case RefType(tpe) => tpe
           case _ => NoType
+        })
+      case Dereference(_) =>
+        Seq(expectedTpe match {
+          case NoType => NoType
+          case _ => RefType(expectedTpe).copiedFrom(expectedTpe)
         })
       case RcNew(_) =>
         Seq(expectedTpe match {

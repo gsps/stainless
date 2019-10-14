@@ -33,10 +33,7 @@ class TypeLowering extends ProgramTransformer {
 
     override def transform(vd: ValDef, env: Env): ValDef = {
       def transformBinderType(tpe: Type): Type = {
-        tpe match {
-          case RcType(_) => RefType(tpe).copiedFrom(tpe)
-          case _         => tpe
-        }
+        RefType(tpe).copiedFrom(tpe)
       }
 
       val vdAfter = super.transform(vd, env)
@@ -51,9 +48,9 @@ class TypeLowering extends ProgramTransformer {
       def adaptToExpected(expr: Expr, expected: Type): Expr = {
         val actual = expr.getType
         (actual, expected) match {
-          // TODO: Do the same for dereferencing?
-          case (_, RefType(`actual`)) => Reference(expr).copiedFrom(expr)
-          case _                      => expr
+          case (_, RefType(`actual`))   => Reference(expr).copiedFrom(expr)
+          case (RefType(`expected`), _) => Dereference(expr).copiedFrom(expr)
+          case _                        => expr
         }
       }
       def adaptAndWrapIfRc(expr: Expr)(wrapper: Expr => Expr): Expr = {

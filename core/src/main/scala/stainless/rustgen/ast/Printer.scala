@@ -363,6 +363,7 @@ ${print(elze)(ctx.inner)}
       case Error(_, description) => p"panic!(${StrLiteral(description)})"
 
       case Reference(expr) => p"(&$expr)"
+      case Dereference(expr) => p"(*$expr)"
 
       case RcNew(expr)   => p"Rc::new($expr)"
       case RcClone(expr) => p"$expr.clone()"

@@ -71,6 +71,9 @@ object TreeDeconstructor {
       case Reference(expr) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,
           (_, _, es, _) => Reference(es.head))
+      case Dereference(expr) =>
+        (NoIdentifiers, NoVariables, Seq(expr), NoTypes,
+          (_, _, es, _) => Dereference(es.head))
 
       case RcNew(expr) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,

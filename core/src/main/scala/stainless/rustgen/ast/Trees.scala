@@ -241,6 +241,7 @@ object Trees {
   case class RefType(tpe: Type) extends Type
 
   case class Reference(expr: Expr) extends Expr
+  case class Dereference(expr: Expr) extends Expr
 
   /* == Reference-counted boxes == */
   // TODO: Remove once we have support for type parametricity
