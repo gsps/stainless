@@ -25,11 +25,18 @@ object ListOps {
       case Cons(_, xs) => xs
     }
 
+  def at_least_two(xs: List): Boolean =
+    xs match {
+      case Cons(_, Cons(_, _)) => true
+      case _ => false
+    }
+
   def main(): Unit = {
     val xs = Cons(1, Cons(2, Nil()))
     println(length(xs))
     println(head(xs))
     println(head(tail(xs)))
     println(head(tail(tail(xs))))
+    println(at_least_two(xs))
   }
 }
