@@ -23,6 +23,7 @@ class TypeLowering extends ProgramTransformer {
     }
     def initEnv = Env(noExpectedType, Set.empty)
 
+    /* The primary type lowering we are performing in this phase: */
     override def transform(tpe: Type, env: Env): Type = {
       tpe match {
         case tpe: StructType => RcType(tpe).copiedFrom(tpe)
@@ -31,6 +32,7 @@ class TypeLowering extends ProgramTransformer {
       }
     }
 
+    /* We also rewrite match scrutinees to references, affecting pattern binder types: */
     override def transform(vd: ValDef, env: Env): ValDef = {
       def transformBinderType(tpe: Type): Type = {
         RefType(tpe).copiedFrom(tpe)

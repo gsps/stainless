@@ -44,6 +44,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
     if (isStrict) {
       tpe
     } else {
+      // TODO: This should also map through Enum and StructTypes, no?
       tpe match {
         case TupleType(tps) => TupleType(tps.map(fullyErased)).copiedFrom(tpe)
         case RcType(tpe)    => fullyErased(tpe)
