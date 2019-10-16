@@ -107,7 +107,7 @@ object Trees {
 
     override def equals(that: Any): Boolean = that match {
       case other: ValDef => v.equals(other.v)
-      case _ => false
+      case _             => false
     }
     override def hashCode: Int = v.hashCode
 
@@ -118,7 +118,10 @@ object Trees {
   }
 
   object ValDef {
-    def apply(id: Identifier, tpe: Type, flags: Seq[Flag] = Seq.empty) = new ValDef(Variable(id, tpe, flags))
+    def fresh(name: String, tpe: Type, alwaysShowUniqueID: Boolean = false) =
+      ValDef(Identifier(name, alwaysShowUniqueID), tpe)
+    def apply(id: Identifier, tpe: Type, flags: Seq[Flag] = Seq.empty) =
+      new ValDef(Variable(id, tpe, flags))
     def unapply(vd: ValDef): Option[(Identifier, Type, Seq[Flag])] = Some((vd.id, vd.tpe, vd.flags))
   }
 
@@ -236,7 +239,12 @@ object Trees {
   // TODO: Remove once we have support for type parametricity
   case class Error(tpe: Type, description: String) extends Expr
 
-  /* == Lower-level IR == */
+  /* == Match-flattened IR == */
+
+  case class LabelledBlock(label: Identifier, body: Expr) extends Expr
+  case class Break(label: Identifier, arg: Expr) extends Expr
+
+  /* == Type-lowered IR == */
 
   case class RefType(tpe: Type) extends Type
 

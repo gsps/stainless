@@ -58,8 +58,8 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   // TODO: Replace by generic type transform
   protected def refErased(tpe: Type): Type = {
     tpe match {
-      case RefType(tpe)   => refErased(tpe)
-      case _              => tpe
+      case RefType(tpe) => refErased(tpe)
+      case _            => tpe
     }
   }
 
@@ -118,6 +118,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   }
 
   /* Actual typing rules */
+  // TODO: Compute lubs in `IfExpr`, `MatchExpr` and from `Break`s in `LabelledBlock`s
 
   protected def computeType(fd: FunDef): Type = {
     ifWellTyped(fd.body) { bodyTpe =>
@@ -203,7 +204,15 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       case Error(tpe, _) =>
         tpe
 
-      /* Lower-level IR */
+      /* Match-flattened IR */
+
+      case expr: LabelledBlock =>
+        computeType(expr)
+
+      case Break(label, arg) =>
+        UnitType()
+
+      /* Type-lowered IR */
 
       // NOTE: None of the trees below should exist in programs with relaxed typing semantics.
       // However, during program transformations we may produce such lower-level trees and subsequently
@@ -346,10 +355,31 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       }
     }
   }
+
+  protected def computeType(expr: LabelledBlock): Type = {
+    def breaksOf(label: Identifier, expr: Expr): Set[Break] =
+      ExprOps.collect[Break]({
+        case e @ Break(`label`, _) => Set(e)
+        case _                     => Set()
+      })(expr)
+
+    ifWellTyped(expr.body) { bodyTpe =>
+      val breaks = breaksOf(expr.label, expr.body).toSeq
+      val resultTps = breaks.map(break => getType(break.arg))
+      val optBadBreak = (breaks zip resultTps) find {
+        case (break, resultTps) => !conformsTo(resultTps, bodyTpe)
+      }
+      optBadBreak match {
+        case None                     => bodyTpe
+        case Some((break, resultTpe)) => MergeTypeMismatch(break, bodyTpe, resultTpe).toType
+      }
+    }
+  }
 }
 
 // TODO: Factor out the common parts in transform(Expr, Env) with DefinitionTransformer?
-abstract class TypedDefinitionTransformer(implicit val symbols: Symbols) extends DefinitionTransformer {
+abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
+    extends DefinitionTransformer {
   trait EnvWithExpected {
     val expectedTpe: Type
     def withExpected(expectedTpe: Type): Env
@@ -433,7 +463,7 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols) extends
       case Tuple(args) =>
         expectedTpe match {
           case TupleType(tps) => tps
-          case _ => args.map(_ => NoType)
+          case _              => args.map(_ => NoType)
         }
       case Let(vd, _, _) =>
         Seq(vd.tpe, expectedTpe)
@@ -449,7 +479,7 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols) extends
         def patTps(pat: Pattern): Seq[Type] = {
           pat match {
             case LiteralPattern(_, _) => Seq(NoType)
-            case _ => Seq()
+            case _                    => Seq()
           }
         }
         def caseTps(cse: MatchCase): Seq[Type] = {
@@ -457,27 +487,34 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols) extends
         }
         Seq(NoType) ++ cases.flatMap(caseTps)
 
-      /* Lower-level IR */
+      /* Match-flattened IR */
+
+      case LabelledBlock(label, body) =>
+        Seq(expectedTpe)
+      case Break(label, expr) =>
+        Seq(expectedTpe)
+
+      /* Type-lowered IR */
 
       case Reference(_) =>
         Seq(expectedTpe match {
           case RefType(tpe) => tpe
-          case _ => NoType
+          case _            => NoType
         })
       case Dereference(_) =>
         Seq(expectedTpe match {
           case NoType => NoType
-          case _ => RefType(expectedTpe).copiedFrom(expectedTpe)
+          case _      => RefType(expectedTpe).copiedFrom(expectedTpe)
         })
       case RcNew(_) =>
         Seq(expectedTpe match {
           case RcType(tpe) => tpe
-          case _ => NoType
+          case _           => NoType
         })
       case RcAsRef(_) =>
         Seq(expectedTpe match {
           case RefType(RcType(tpe)) => expectedTpe
-          case _ => NoType
+          case _                    => NoType
         })
 
       case _ => Seq.empty

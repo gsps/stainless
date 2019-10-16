@@ -68,6 +68,13 @@ object TreeDeconstructor {
         (NoIdentifiers, NoVariables, NoExpressions, Seq(tpe),
           (_, _, _, tps) => Error(tps.head, description))
 
+      case LabelledBlock(label, body) =>
+        (Seq(label), NoVariables, Seq(body), NoTypes,
+          (ids, _, es, _) => LabelledBlock(ids.head, es.head))
+      case Break(label, arg) =>
+        (Seq(label), NoVariables, Seq(arg), NoTypes,
+          (ids, _, es, _) => LabelledBlock(ids.head, es.head))
+
       case Reference(expr) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,
           (_, _, es, _) => Reference(es.head))
@@ -281,6 +288,14 @@ object Deconstructors {
         case _ =>
           None
       }
+    }
+  }
+
+  object PatternBinder {
+    def unapply(pat: Pattern): Some[(Option[ValDef], Option[ValDef] => Pattern)] = {
+      val (ids, vs, es, tps, pats, recons) = deconstructor.deconstruct(pat)
+      Some((vs.headOption.map(_.toVal),
+        optBinder => recons(ids, optBinder.map(_.toVariable).toSeq, es, tps, pats)))
     }
   }
 }

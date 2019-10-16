@@ -105,7 +105,7 @@ object Printer {
       for { (arg, part) <- argsIt zip partsIt } {
         arg match {
           case string: String        => result.appendMultiLineString(string)
-          case id: Identifier        => result.appendNewlineFreeString(id.toString)
+          case id: Identifier        => result.appendNewlineFreeString(id.toString.replaceAll("\\$", "__"))
           case tree: Trees.Tree      => result += ctx.printer.print(tree)
           case chunk: PrintableChunk => result += chunk
           case _ =>
@@ -210,7 +210,7 @@ ${structsC}${enumsC}${functionsC}"""
 
   def print(flag: Flag)(implicit ctx: PrinterContext): PrintableChunk = {
     flag match {
-      case Library => p"@library"
+      case Library    => p"@library"
       case RefBinding => p"@refBinding"
     }
   }
@@ -333,7 +333,7 @@ ${commanlSeparated(args.map(print(_)(inner)))}
 ${commanlSeparated(fieldChunks)}
 }"""
 
-      case Tuple(exprs) => p"${commaSeparated(exprs.map(print))}"
+      case Tuple(exprs) => p"(${commaSeparated(exprs.map(print))})"
 
       case Let(vd, value, body) =>
         p"""let $vd = {
@@ -362,7 +362,12 @@ ${print(elze)(ctx.inner)}
 
       case Error(_, description) => p"panic!(${StrLiteral(description)})"
 
-      case Reference(expr) => p"(&$expr)"
+      case LabelledBlock(label, body) => p"""'$label: loop { break {
+${print(body)(ctx.inner)}
+} }"""
+      case Break(label, arg)          => p"break '$label $arg"
+
+      case Reference(expr)   => p"(&$expr)"
       case Dereference(expr) => p"(*$expr)"
 
       case RcNew(expr)   => p"Rc::new($expr)"
@@ -409,6 +414,6 @@ ${print(elze)(ctx.inner)}
     pat.binder map { vd =>
       val ref = if (vd.flags.contains(RefBinding)) p"ref " else p""
       p"${ref}${vd.id} @ $chunk"
-    } getOrElse(chunk)
+    } getOrElse (chunk)
   }
 }

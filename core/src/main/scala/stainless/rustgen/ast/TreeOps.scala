@@ -60,6 +60,13 @@ trait GenTreeOps {
       f(newV) getOrElse newV
     }
   }
+
+  /* Auxiliary operations */
+
+  /** Collects a set of objects from all sub-expressions */
+  def collect[S](matcher: T => Set[S])(e: T): Set[S] = {
+    fold[Set[S]]({ (e, subs) => matcher(e) ++ subs.flatten } )(e)
+  }
 }
 
 /* Concrete implementations */
