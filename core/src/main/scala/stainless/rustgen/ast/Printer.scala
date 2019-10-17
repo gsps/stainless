@@ -103,6 +103,7 @@ object Printer {
       val argsIt = args.iterator
       result.appendMultiLineString(partsIt.next())
       for { (arg, part) <- argsIt zip partsIt } {
+        // TODO: Find a real solution for the unique-identifier issue below.
         arg match {
           case string: String        => result.appendMultiLineString(string)
           case id: Identifier        => result.appendNewlineFreeString(id.toString.replaceAll("\\$", "__"))
