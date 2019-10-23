@@ -68,7 +68,10 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)(
 
   private implicit val debugSection = DebugSectionRustgen
 
-  private[stainless] def execute(_functions: Seq[Identifier], symbols: Symbols): Future[Analysis] = {
+  private[stainless] def execute(
+      _functions: Seq[Identifier],
+      symbols: Symbols
+  ): Future[Analysis] = {
     import context._
 
     val p = inox.Program(trees)(symbols)
@@ -90,9 +93,12 @@ class RustgenRun(override val pipeline: extraction.StainlessPipeline)(
     def shouldIgnoreSort(sort: ADTSort): Boolean = {
       sort.flags contains Synthetic
     }
+    def shouldIgnoreFunction(fd: FunDef): Boolean = {
+      fd.flags contains Synthetic
+    }
 
     val sorts = symbols.sorts.values.filterNot(shouldIgnoreSort).map(_.id).toSeq
-    val functions = symbols.functions.keys.toSeq
+    val functions = symbols.functions.values.filterNot(shouldIgnoreFunction).map(_.id).toSeq
     reporter.debug(s"Processing ${sorts.size} sorts: ${sorts mkString ", "}")
     reporter.debug(s"Processing ${functions.size} functions: ${functions mkString ", "}")
 
