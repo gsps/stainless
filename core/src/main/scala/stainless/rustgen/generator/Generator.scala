@@ -57,6 +57,9 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
     val typeLoweredProgram = new TypeLowering().transform(matchFlattenedProgram)
     checkWellTyped(typeLoweredProgram)
 
-    trim(typeLoweredProgram)
+    val idiomatizedProgram = new Idiomatization().transform(typeLoweredProgram)
+    checkWellTyped(idiomatizedProgram)
+
+    trim(idiomatizedProgram)
   }
 }

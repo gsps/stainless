@@ -212,6 +212,13 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       case Break(label, arg) =>
         UnitType()
 
+      case Sequence(expr1, expr2) =>
+        ifWellTyped(expr1) { _ =>
+          ifWellTyped(expr2) { tpe =>
+            tpe
+          }
+        }
+
       /* Type-lowered IR */
 
       // NOTE: None of the trees below should exist in programs with relaxed typing semantics.
@@ -493,6 +500,8 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
         Seq(expectedTpe)
       case Break(label, expr) =>
         Seq(expectedTpe)
+      case Sequence(expr1, expr2) =>
+        Seq(NoType, expectedTpe)
 
       /* Type-lowered IR */
 
@@ -506,6 +515,9 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
           case NoType => NoType
           case _      => RefType(expectedTpe).copiedFrom(expectedTpe)
         })
+
+      /* Reference-counted boxes */
+
       case RcNew(_) =>
         Seq(expectedTpe match {
           case RcType(tpe) => tpe

@@ -203,7 +203,7 @@ class Printer(opts: PrinterOptions)(implicit symbols: Trees.Symbols) {
     val enumsC = nlSeparatedCompact(enums.values.toSeq.map(print), 2)
     val functionsC = nlSeparatedCompact(functions.values.toSeq.map(print), 2)
     p"""// Stainless-generated module
-#![allow(unused_parens)]
+#![allow(non_snake_case,unused_parens,unreachable_code,unreachable_patterns)]
 use std::ops::*;
 use std::rc::Rc;
 ${structsC}${enumsC}${functionsC}"""
@@ -367,6 +367,8 @@ ${print(elze)(ctx.inner)}
 ${print(body)(ctx.inner)}
 } }"""
       case Break(label, arg)          => p"break '$label $arg"
+      case Sequence(expr1, expr2)     => p"""$expr1;
+$expr2"""
 
       case Reference(expr)   => p"(&$expr)"
       case Dereference(expr) => p"(*$expr)"

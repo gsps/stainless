@@ -74,6 +74,9 @@ object TreeDeconstructor {
       case Break(label, arg) =>
         (Seq(label), NoVariables, Seq(arg), NoTypes,
           (ids, _, es, _) => LabelledBlock(ids.head, es.head))
+      case Sequence(expr1, expr2) =>
+        (NoIdentifiers, NoVariables, Seq(expr1, expr2), NoTypes,
+          (_, _, es, _) => Sequence(es(0), es(1)))
 
       case Reference(expr) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,

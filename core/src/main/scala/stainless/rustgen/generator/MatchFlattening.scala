@@ -118,8 +118,7 @@ class MatchFlattening extends IdentityProgramTransformer {
                   rebuildDeepCase(strata, optGuard, breakingRhs).copiedFrom(mtch)
               }
               .foldRight[Expr](Error(mtchAfter.getType, "Match error")) {
-                case (mtch, rest) =>
-                  Let(ValDef.fresh("case", UnitType(), true), mtch, rest).copiedFrom(mtch)
+                case (mtch, rest) => Sequence(mtch, rest).copiedFrom(mtch)
               }
             val body = Let(scrutVd, mtchAfter.scrutinee, newMatches).copiedFrom(mtch)
             LabelledBlock(labelSuccess, body).copiedFrom(mtch)

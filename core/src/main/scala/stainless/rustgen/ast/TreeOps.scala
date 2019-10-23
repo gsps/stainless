@@ -8,6 +8,8 @@ import Trees._
 
 import inox.utils.fixpoint
 
+import scala.collection.mutable.{Map => MutableMap, Set => MutableSet}
+
 trait TreeExtractor[T <: Tree] {
   def unapply(t: T): Option[(Seq[T], Seq[T] => T)]
 }
@@ -40,7 +42,7 @@ trait GenTreeOps {
     f(t, ts.view.map(rec))
   }
 
-  def postMap(f: T => Option[T], applyRec : Boolean = false)(e: T): T = {
+  def postMap(f: T => Option[T], applyRec: Boolean = false)(e: T): T = {
     val rec = postMap(f, applyRec) _
 
     val Deconstructor(es, builder) = e
@@ -55,7 +57,9 @@ trait GenTreeOps {
 
     if (applyRec) {
       // Apply f as long as it returns Some()
-      fixpoint { e : T => f(e) getOrElse e } (newV)
+      fixpoint { e: T =>
+        f(e) getOrElse e
+      }(newV)
     } else {
       f(newV) getOrElse newV
     }
@@ -65,7 +69,9 @@ trait GenTreeOps {
 
   /** Collects a set of objects from all sub-expressions */
   def collect[S](matcher: T => Set[S])(e: T): Set[S] = {
-    fold[Set[S]]({ (e, subs) => matcher(e) ++ subs.flatten } )(e)
+    fold[Set[S]]({ (e, subs) =>
+      matcher(e) ++ subs.flatten
+    })(e)
   }
 }
 
@@ -80,8 +86,26 @@ object ExprOps extends GenTreeOps {
     new TreeTransformer {
       override def transform(expr: Expr): Expr = expr match {
         case v: Variable => substs.getOrElse(v.toVal, super.transform(v))
-        case _ => super.transform(expr)
+        case _           => super.transform(expr)
       }
     }.transform(expr)
+  }
+
+  /** Counts for each ValDef how often it is referred to. **/
+  def countValDefs(expr: Expr): Map[Identifier, Int] = {
+    val counts: MutableMap[Identifier, Int] = MutableMap.empty.withDefaultValue(0)
+    val valDefs: MutableSet[ValDef] = MutableSet.empty
+    object transformer extends TreeTransformer {
+      override def transform(vd: ValDef): ValDef = {
+        valDefs.add(vd)
+        vd
+      }
+      override def transform(expr: Expr): Expr = expr match {
+        case v: Variable => counts(v.id) += 1; expr
+        case _           => super.transform(expr)
+      }
+    }
+    transformer.transform(expr)
+    valDefs.map(vd => vd.id -> counts(vd.id)).toMap
   }
 }
