@@ -31,12 +31,21 @@ object ListOps {
       case _ => false
     }
 
+  def zip_and_add(xs: List, ys: List): List =
+    (xs, ys) match {
+      case (Cons(x, xs0), Cons(y, ys0)) => Cons(x + y, zip_and_add(xs0, ys0))
+      case _ => Nil()
+    }
+
   def main(): Unit = {
     val xs = Cons(1, Cons(2, Nil()))
     println(length(xs))
     println(head(xs))
     println(head(tail(xs)))
-    println(head(tail(tail(xs))))
     println(at_least_two(xs))
+
+    val ys = zip_and_add(xs, xs)
+    println(length(ys))
+    println(head(ys))
   }
 }

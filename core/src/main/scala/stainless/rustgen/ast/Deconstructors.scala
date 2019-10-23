@@ -50,6 +50,9 @@ object TreeDeconstructor {
       case Tuple(exprs) =>
         (NoIdentifiers, NoVariables, exprs, NoTypes,
           (_, _, es, _) => Tuple(es))
+      case TupleSelect(expr, index, arity) =>
+        (NoIdentifiers, NoVariables, Seq(expr), NoTypes,
+          (_, _, es, _) => TupleSelect(es.head, index, arity))
       case Let(vd, value, body) =>
         (NoIdentifiers, Seq(vd.toVariable), Seq(value, body), NoTypes,
           (_, vs, es, _) => Let(vs.head.toVal, es(0), es(1)))
@@ -73,7 +76,7 @@ object TreeDeconstructor {
           (ids, _, es, _) => LabelledBlock(ids.head, es.head))
       case Break(label, arg) =>
         (Seq(label), NoVariables, Seq(arg), NoTypes,
-          (ids, _, es, _) => LabelledBlock(ids.head, es.head))
+          (ids, _, es, _) => Break(ids.head, es.head))
       case Sequence(expr1, expr2) =>
         (NoIdentifiers, NoVariables, Seq(expr1, expr2), NoTypes,
           (_, _, es, _) => Sequence(es(0), es(1)))

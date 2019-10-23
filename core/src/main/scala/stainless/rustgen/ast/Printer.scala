@@ -276,6 +276,8 @@ ${print(fun.body)(ctx.inner)}
     err match {
       case ArgumentTypeMismatch(blamed, param, actual) =>
         p"argument type $actual doesn't match parameter $param"
+      case ArityMismatch(blamed, expected, actual) =>
+        p"expected ${expected.tps.size} arguments, but got ${actual.tps.size}"
       case ReturnTypeMismatch(blamed, expected, actual) =>
         p"returned type $actual doesn't match result type $expected"
       case LetTypeMismatch(blamed, expected, actual) =>
@@ -335,6 +337,7 @@ ${commanlSeparated(fieldChunks)}
 }"""
 
       case Tuple(exprs) => p"(${commaSeparated(exprs.map(print))})"
+      case TupleSelect(expr, index, _) => p"$expr.${index.toString}"
 
       case Let(vd, value, body) =>
         p"""let $vd = {

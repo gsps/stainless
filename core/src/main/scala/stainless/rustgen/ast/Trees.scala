@@ -151,6 +151,8 @@ object Trees {
     case class ArgumentTypeMismatch(blamed: Tree, param: ValDef, actual: Type) extends TypingError {
       val expected = param.tpe
     }
+    case class ArityMismatch(blamed: Tree, expected: TupleType, actual: TupleType)
+        extends TypingError
     case class ReturnTypeMismatch(blamed: Tree, expected: Type, actual: Type) extends TypingError
     case class LetTypeMismatch(blamed: Tree, expected: Type, actual: Type) extends TypingError
     case class ConditionTypeMismatch(blamed: Tree, actual: Type) extends TypingError {
@@ -174,7 +176,9 @@ object Trees {
     ??? // TODO: Renable once we have support for type parametricity
   }
   case class EnumType(id: Identifier, tps: Seq[Type]) extends Type
-  case class TupleType(tps: Seq[Type]) extends Type
+  case class TupleType(tps: Seq[Type]) extends Type {
+    assert(tps.size > 1)
+  }
 
   /* Expressions */
 
@@ -205,7 +209,13 @@ object Trees {
   case class Enum(id: Identifier, tps: Seq[Type], args: Seq[Expr]) extends Expr {
     assert(tps.isEmpty) // TODO
   }
-  case class Tuple(exprs: Seq[Expr]) extends Expr
+
+  case class Tuple(exprs: Seq[Expr]) extends Expr {
+    assert(exprs.size > 1)
+  }
+  case class TupleSelect(expr: Expr, index: Int, arity: Int) extends Expr {
+    assert(arity > 1 && 0 <= index && index < arity)
+  }
 
   case class Let(vd: ValDef, value: Expr, body: Expr) extends Expr
 

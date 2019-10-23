@@ -47,7 +47,7 @@ class TypeLowering extends ProgramTransformer {
     }
 
     override def transform(e: Expr, env: Env): Expr = {
-      def adaptToExpected(expr: Expr, expected: Type): Expr = {
+      def adaptToExpectedRef(expr: Expr, expected: Type): Expr = {
         val actual = expr.getType
         (actual, expected) match {
           case (_, RefType(`actual`))   => Reference(expr).copiedFrom(expr)
@@ -62,23 +62,57 @@ class TypeLowering extends ProgramTransformer {
           case _                  => expr
         }
       }
+      def adaptScrutinee(expr: Expr): Expr = {
+        // We need to ensure that all compound data we match upon is passed as references to the
+        // underyling data. This is in order to not move the boxes, but also so that we can
+        // then match directly using the "unboxed" struct patterns.
+        // We therefore perform the following to adaptations:
+        // a) "Shallow" Rc-typed values are unwrapped to references of their underlying data
+        //    ("as_ref"). Shallow here means that either the scrutinee itself is Rc-typed, or
+        //    it is directly contained within a tuple-typed scrutinee.
+        // b) Tuple-typed scrutinees are referenced, so as not to move the tuple into any single
+        //    given match.
+        def unboxRcs(expr: Expr): Expr =
+          expr.getType match {
+            case TupleType(tps) =>
+              Tuple(expr match {
+                case Tuple(args) =>
+                  args.map(unboxRcs)
+                case _ =>
+                  // Note that `expr` must be a variable here by construction in match flattening:
+                  assert(expr.isInstanceOf[Variable]) // => duplicating `expr` is cheap
+                  val arity = tps.size
+                  (0 until arity).map(i => unboxRcs(TupleSelect(expr, i, arity).copiedFrom(expr)))
+              }).copiedFrom(expr)
+            case _ =>
+              adaptAndWrapIfRc(expr)(RcAsRef)
+          }
+
+        val unboxed = unboxRcs(expr)
+        expr.getType match {
+          case TupleType(_) => Reference(unboxed).copiedFrom(expr)
+          case _            => unboxed
+        }
+      }
 
       val eAfter = e match {
         case v: Variable => adaptAndWrapIfRc(super.transform(v, env))(RcClone)
 
-        case e: Struct   => RcNew(super.transform(e, env)).copiedFrom(e)
-        case e: Enum     => RcNew(super.transform(e, env)).copiedFrom(e)
+        case e: Struct => RcNew(super.transform(e, env)).copiedFrom(e)
+        case e: Enum   => RcNew(super.transform(e, env)).copiedFrom(e)
 
         case mtch: MatchExpr =>
-          val newPatBinders = env.patBinders ++ mtch.cases.flatMap(cd => cd.pattern.binders.map(_.id))
+          val newPatBinders = env.patBinders ++ mtch.cases.flatMap(
+            cd => cd.pattern.binders.map(_.id)
+          )
           val mtchAfter @ MatchExpr(scrutAfter, _) =
             super.transform(mtch, env.copy(patBinders = newPatBinders)).asInstanceOf[MatchExpr]
-          mtchAfter.copy(scrutinee = adaptAndWrapIfRc(scrutAfter)(RcAsRef)).copiedFrom(mtchAfter)
+          mtchAfter.copy(scrutinee = adaptScrutinee(scrutAfter)).copiedFrom(mtchAfter)
 
         case _ =>
           super.transform(e, env)
       }
-      adaptToExpected(eAfter, env.expectedTpe)
+      adaptToExpectedRef(eAfter, env.expectedTpe)
     }
   }
 

@@ -16,61 +16,73 @@ class MatchFlattening extends IdentityProgramTransformer {
       type Strata = Seq[Stratum] // for a given case, all the "layers" of simultaneous matching
 
       def stratify(scrutVar: Variable, mtch: MatchExpr): Seq[(Strata, Option[Expr], Expr)] = {
-        def wildcardInStruct(binder: Option[ValDef], field: ValDef): WildcardPattern =
-          WildcardPattern(Some(binder.getOrElse(ValDef.fresh(field.id.name, field.tpe, true))))
-
-        def wildcardInTuple(binder: Option[ValDef], tpeAndIndex: (Type, Int)): WildcardPattern = {
-          val (tpe, index) = tpeAndIndex
-          WildcardPattern(Some(binder.getOrElse(ValDef.fresh(s"_$index", tpe, true))))
-        }
-
         def withoutBinder(pat: Pattern): Pattern =
           pat match {
             case PatternBinder(None, _)         => pat
             case PatternBinder(Some(_), recons) => recons(None)
           }
 
-        def unfoldSub[F](
-            fields: Seq[F],
+        // Unfold each tuple subpattern and adapt struct subpatterns to ensure they have a binder.
+        // Struct subpatterns form the boundary; tuple- and other primitive subpatterns are kept.
+        def unfoldSubSteps(
+            fields: Seq[(String, Type)],
             subPats: Seq[Pattern],
-            buildWildcard: (Option[ValDef], F) => WildcardPattern
-        ): (Seq[Pattern], Stratum) = {
-          val (newSubPatterns, restOpts) = ((fields zip subPats) map {
-            case (_, subPat: WildcardPattern) =>
-              (subPat, None)
-            case (_, subPat: LiteralPattern[_]) =>
-              (subPat, None)
-            case (field, subPat) =>
-              val wildcard = buildWildcard(subPat.binder, field)
-              val binder = wildcard.binder.get
-              (wildcard, Some(binder.toVariable -> subPat))
+            recurseOnStruct: Boolean
+        ): (Seq[Pattern], Strata) = {
+          (fields.zip(subPats) map {
+            case ((_, subTpe), subPat: StructPattern) if recurseOnStruct =>
+              unfoldStep(subTpe, subPat)
+            case ((_, subTpe), subPat: TuplePattern) =>
+              unfoldStep(subTpe, subPat)
+
+            case ((subName, subTpe), subPat: StructPattern) =>
+              val binder = subPat.binder.getOrElse {
+                ValDef.fresh(subName, subTpe, true)
+              }
+              val wildcard = WildcardPattern(Some(binder))
+              (wildcard, Seq(binder.toVariable -> subPat))
+
+            case (_, subPat) =>
+              (subPat, Seq())
           }).unzip
-          (newSubPatterns, restOpts.flatten)
         }
 
+        // Unfold a single step as deeply as possible by recursing on tuple patterns.
+        def unfoldStep(scrutTpe: Type, pat: Pattern): (Pattern, Stratum) = {
+          pat match {
+            case pat @ StructPattern(_, id, subPats) =>
+              val fields = scrutTpe match {
+                case StructType(_, Seq()) => symbols.getStruct(id).fields
+                case EnumType(_, Seq())   => symbols.getEnumVariant(id).fields
+              }
+              val fieldInfos = fields.map(field => field.id.name -> field.tpe)
+              val (newSubPatterns, rests) =
+                unfoldSubSteps(fieldInfos, subPats, recurseOnStruct = false)
+              val newPat = pat.copy(subPatterns = newSubPatterns).copiedFrom(pat)
+              (newPat, rests.flatten)
+
+            case pat @ TuplePattern(_, subPats) =>
+              val TupleType(subScrutTps) = scrutTpe
+              val fieldInfos = subScrutTps.zipWithIndex.map { case (tpe, i) => s"_$i" -> tpe }
+              val (newSubPatterns, rests) =
+                unfoldSubSteps(fieldInfos, subPats, recurseOnStruct = true)
+              val newPat = pat.copy(subPatterns = newSubPatterns).copiedFrom(pat)
+              (newPat, rests.flatten)
+
+            case _ =>
+              (pat, Seq())
+          }
+        }
+
+        // Unfold a nested stratum into many shallow ones.
         def unfold(nested: Stratum): Strata = {
           if (nested.isEmpty) {
             Nil
           } else {
             val (shallow, nesteds): (Stratum, Strata) = (nested map {
-              case (scrutV, pat @ StructPattern(_, id, subPatterns)) =>
-                val fields = scrutV.tpe match {
-                  case StructType(_, Seq()) => symbols.getStruct(id).fields
-                  case EnumType(_, Seq())   => symbols.getEnumVariant(id).fields
-                }
-                val (newSubPatterns, rest) = unfoldSub(fields, subPatterns, wildcardInStruct)
-                val newPat = pat.copy(subPatterns = newSubPatterns).copiedFrom(pat)
+              case (scrutV, pat) =>
+                val (newPat, rest) = unfoldStep(scrutV.tpe, pat)
                 ((scrutV, newPat), rest)
-
-              case (scrutV, pat @ TuplePattern(_, subPatterns)) =>
-                val TupleType(subScrutTps) = scrutV.tpe
-                val (newSubPatterns, rest) =
-                  unfoldSub(subScrutTps.zipWithIndex, subPatterns, wildcardInTuple)
-                val newPat = pat.copy(subPatterns = newSubPatterns).copiedFrom(pat)
-                ((scrutV, newPat), rest)
-
-              case step =>
-                (step, Seq.empty)
             }).unzip
             shallow +: unfold(nesteds.flatten)
           }
@@ -81,7 +93,7 @@ class MatchFlattening extends IdentityProgramTransformer {
         }
       }
 
-      def rebuildDeepCase(
+      def rebuildStratifiedCase(
           strata: Strata,
           optGuard: Option[Expr],
           rhs: Expr
@@ -104,6 +116,21 @@ class MatchFlattening extends IdentityProgramTransformer {
         }
       }
 
+      /*
+      def dumpStratifiedCases(stratCases: Seq[(Strata, Option[Expr], Expr)]): Unit = {
+        println("---")
+        stratCases.foreach {
+          case (strata, optGuard, rhs) =>
+            println(s"* $optGuard / $rhs / strata:")
+            strata.foreach { stratum =>
+              println(
+                s"  - ${stratum.map { case (v, pat) => s"${v.show()} @ ${pat.show()}" }.mkString(", ")}"
+              )
+            }
+        }
+      }
+       */
+
       e match {
         case mtch: MatchExpr =>
           val mtchAfter = super.transform(mtch).asInstanceOf[MatchExpr]
@@ -115,7 +142,7 @@ class MatchFlattening extends IdentityProgramTransformer {
               .map {
                 case (strata, optGuard, rhs) =>
                   val breakingRhs = Break(labelSuccess, rhs).copiedFrom(rhs)
-                  rebuildDeepCase(strata, optGuard, breakingRhs).copiedFrom(mtch)
+                  rebuildStratifiedCase(strata, optGuard, breakingRhs).copiedFrom(mtch)
               }
               .foldRight[Expr](Error(mtchAfter.getType, "Match error")) {
                 case (mtch, rest) => Sequence(mtch, rest).copiedFrom(mtch)

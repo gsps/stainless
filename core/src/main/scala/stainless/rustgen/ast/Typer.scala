@@ -130,15 +130,17 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   }
 
   protected def computeType(expr: Expr): Type = {
-    def invocation(expr: Expr, id: Identifier, args: Seq[Expr]): Type = {
+    def invocation(expr: Expr, params: Seq[ValDef], args: Seq[Expr], result: Type): Type = {
       ifWellTyped(args) { argTps =>
-        val fd = symbols.getFunction(id)
-        // TODO: Also check number of arguments
-        val optErrorTpe = (fd.params zip argTps) collectFirst {
-          case (param, argTpe) if !conformsTo(argTpe, param.tpe) =>
-            ArgumentTypeMismatch(expr, param, argTpe).toType
+        if (params.size != argTps.size) {
+          ArityMismatch(expr, TupleType(params.map(_.tpe)), TupleType(argTps)).toType
+        } else {
+          val optErrorTpe = (params zip argTps) collectFirst {
+            case (param, argTpe) if !conformsTo(argTpe, param.tpe) =>
+              ArgumentTypeMismatch(expr, param, argTpe).toType
+          }
+          optErrorTpe getOrElse result
         }
-        optErrorTpe getOrElse fd.returnType
       }
     }
 
@@ -155,20 +157,32 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
         asType
       case StrLiteral(_) =>
         StrType()
-      case Struct(id, tps, _) =>
-        ifGoodTypes(tps) { tps =>
-          // TODO: Check against expected types
-          StructType(id, tps)
-        }
 
-      case Enum(id, tps, _) =>
-        ifGoodTypes(tps) { tps =>
-          // TODO: Check against expected types
-          EnumType(symbols.getEnumVariant(id).enm, tps)
-        }
+      case Struct(id, tps, args) =>
+        assert(tps.isEmpty)
+        invocation(expr, symbols.getStruct(id).fields, args, StructType(id, tps))
+
+      case Enum(id, tps, args) =>
+        assert(tps.isEmpty)
+        val vari = symbols.getEnumVariant(id)
+        invocation(expr, vari.fields, args, EnumType(vari.enm, tps))
+
       case Tuple(exprs) =>
         ifWellTyped(exprs) { tps =>
           TupleType(tps)
+        }
+      case TupleSelect(expr, index, arity) =>
+        ifWellTyped(expr) { tpe =>
+          def expected = TupleType(Seq.fill(arity)(NoType))
+          refErased(tpe) match {
+            case TupleType(tps) =>
+              if (arity != tps.size)
+                ArityMismatch(expr, expected, TupleType(tps)).toType
+              else
+                tps(index)
+            case tpe =>
+              TypeMatchMismatch(expr, expected, tpe).toType
+          }
         }
 
       case Let(vd, value, body) =>
@@ -180,9 +194,11 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
         }
 
       case FunctionInvocation(fun, args) =>
-        invocation(expr, fun, args)
+        val fd = symbols.getFunction(fun)
+        invocation(expr, fd.params, args, fd.returnType)
       case MethodInvocation(method, recv, args) =>
-        invocation(expr, method, recv +: args)
+        val fd = symbols.getFunction(method)
+        invocation(expr, fd.params, recv +: args, fd.returnType)
 
       case IfExpr(cond, thenn, elze) =>
         ifWellTyped(cond) { condTpe =>
@@ -259,8 +275,6 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   }
 
   protected def computeType(expr: MatchExpr): Type = {
-    val MatchExpr(scrutinee, cases) = expr
-
     def checkBinder(binder: Option[ValDef], scrutTpe: Type)(
         rest: => Option[TypingError]
     ): Option[TypingError] = {
@@ -349,6 +363,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       }
     }
 
+    val MatchExpr(scrutinee, cases) = expr
     ifWellTyped(scrutinee) { scrutTpe =>
       ifGoodTypes(cases.map(cse => caseType(cse, scrutTpe))) { caseTps =>
         val expected = caseTps.head
@@ -414,7 +429,7 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
   override def transform(e: Expr, env: Env): Expr = {
     val (ids, vs, es, tps /*, flags*/, builder) = TreeDeconstructor.deconstruct(e)
     val envWithoutExpected = env.withExpected(NoType)
-    val expectedTps = getExpectedTypes(e, es, env.expectedTpe)
+    val expectedTps = getExpectedTypes(e, env.expectedTpe)
     assert(es.size == expectedTps.size)
 
     var changed = false
@@ -457,7 +472,7 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
     }
   }
 
-  protected def getExpectedTypes(expr: Expr, subExprs: Seq[Expr], expectedTpe: Type): Seq[Type] = {
+  protected def getExpectedTypes(expr: Expr, expectedTpe: Type): Seq[Type] = {
     expr match {
       case Struct(id, tps, _) =>
         // TODO: Get TypedStructDef to ensure field types are instantiated
@@ -472,6 +487,10 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
           case TupleType(tps) => tps
           case _              => args.map(_ => NoType)
         }
+      case TupleSelect(expr, index, arity) =>
+        val preTps = Seq.fill(index)(NoType)
+        val postTps = Seq.fill(arity - index - 1)(NoType)
+        Seq(TupleType(preTps ++ Seq(expectedTpe) ++ postTps))
       case Let(vd, _, _) =>
         Seq(vd.tpe, expectedTpe)
       case FunctionInvocation(fun, _) =>
@@ -499,7 +518,7 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
       case LabelledBlock(label, body) =>
         Seq(expectedTpe)
       case Break(label, expr) =>
-        Seq(expectedTpe)
+        Seq(expectedTpe) // FIXME: Wrong, should look up expected type for 'label instead!
       case Sequence(expr1, expr2) =>
         Seq(NoType, expectedTpe)
 
