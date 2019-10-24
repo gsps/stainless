@@ -226,7 +226,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
         computeType(expr)
 
       case Break(label, arg) =>
-        UnitType()
+        UnitType() // FIXME: This should be something equivalent to NothingType instead
 
       case Sequence(expr1, expr2) =>
         ifWellTyped(expr1) { _ =>
