@@ -39,12 +39,12 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   /* Typing primitives */
 
   // Erasure of both `RefType`s and `RcType`s (for relaxed typing before `TypeLowering`).
-  // TODO: Replace by generic type transform
   protected def fullyErased(tpe: Type): Type = {
     if (isStrict) {
       tpe
     } else {
-      // TODO: This should also map through Enum and StructTypes, no?
+      // TODO: Replace by generic type transform
+      // TODO: This should also map through Enum and StructTypes once we have type parametricity
       tpe match {
         case TupleType(tps) => TupleType(tps.map(fullyErased)).copiedFrom(tpe)
         case RcType(tpe)    => fullyErased(tpe)
@@ -55,7 +55,6 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   }
 
   // Erasure of top-level `RefType`s only (for pattern typing)
-  // TODO: Replace by generic type transform
   protected def refErased(tpe: Type): Type = {
     tpe match {
       case RefType(tpe) => refErased(tpe)
@@ -104,7 +103,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
     var instT: Option[Type] = None
     def mtch(ground: Type, shape: Type): Boolean = {
       (ground, shape) match {
-        // TODO: Support StructType and EnumType here one we have type parametricity
+        // TODO: Support StructType and EnumType here once we have type parametricity
         case (TupleType(tps1), TupleType(tps2)) => (tps1 zip tps2).forall(tt => mtch(tt._1, tt._2))
         case (RefType(tpe1), RefType(tpe2))     => mtch(tpe1, tpe2)
         case (RcType(tpe1), RcType(tpe2))       => mtch(tpe1, tpe2)
@@ -225,8 +224,13 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       case expr: LabelledBlock =>
         computeType(expr)
 
-      case Break(label, arg) =>
-        UnitType() // FIXME: This should be something equivalent to NothingType instead
+      case Break(label, tpe, arg) =>
+        ifWellTyped(arg) { argTpe =>
+          if (!conformsTo(argTpe, label.tpe))
+            ReturnTypeMismatch(expr, argTpe, label.tpe).toType
+          else
+            tpe
+        }
 
       case Sequence(expr1, expr2) =>
         ifWellTyped(expr1) { _ =>
@@ -379,22 +383,12 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   }
 
   protected def computeType(expr: LabelledBlock): Type = {
-    def breaksOf(label: Identifier, expr: Expr): Set[Break] =
-      ExprOps.collect[Break]({
-        case e @ Break(`label`, _) => Set(e)
-        case _                     => Set()
-      })(expr)
-
     ifWellTyped(expr.body) { bodyTpe =>
-      val breaks = breaksOf(expr.label, expr.body).toSeq
-      val resultTps = breaks.map(break => getType(break.arg))
-      val optBadBreak = (breaks zip resultTps) find {
-        case (break, resultTps) => !conformsTo(resultTps, bodyTpe)
-      }
-      optBadBreak match {
-        case None                     => bodyTpe
-        case Some((break, resultTpe)) => MergeTypeMismatch(break, bodyTpe, resultTpe).toType
-      }
+      val resultTpe = expr.label.tpe
+      if (!conformsTo(bodyTpe, resultTpe))
+        ReturnTypeMismatch(expr, bodyTpe, resultTpe).toType
+      else
+        resultTpe
     }
   }
 }
@@ -474,9 +468,9 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
       /* Match-flattened IR */
 
       case LabelledBlock(label, body) =>
-        Seq(expectedTpe)
-      case Break(label, expr) =>
-        Seq(expectedTpe) // FIXME: Wrong, should look up expected type for 'label instead!
+        Seq(label.tpe)
+      case Break(label, tpe, expr) =>
+        Seq(label.tpe)
       case Sequence(expr1, expr2) =>
         Seq(NoType, expectedTpe)
 

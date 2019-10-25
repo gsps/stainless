@@ -366,10 +366,10 @@ ${print(elze)(ctx.inner)}
 
       case Error(_, description) => p"panic!(${StrLiteral(description)})"
 
-      case LabelledBlock(label, body) => p"""'$label: loop { break {
+      case LabelledBlock(label, body) => p"""'${label.id}: loop { break {
 ${print(body)(ctx.inner)}
 } }"""
-      case Break(label, arg)          => p"break '$label $arg"
+      case Break(label, tpe, arg)     => p"break '${label.id} $arg"
       case Sequence(expr1, expr2)     => p"""$expr1;
 $expr2"""
 

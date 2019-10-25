@@ -72,11 +72,11 @@ object TreeDeconstructor {
           (_, _, _, tps) => Error(tps.head, description))
 
       case LabelledBlock(label, body) =>
-        (Seq(label), NoVariables, Seq(body), NoTypes,
-          (ids, _, es, _) => LabelledBlock(ids.head, es.head))
-      case Break(label, arg) =>
-        (Seq(label), NoVariables, Seq(arg), NoTypes,
-          (ids, _, es, _) => Break(ids.head, es.head))
+        (Seq(label.id), NoVariables, Seq(body), Seq(label.tpe),
+          (ids, _, es, tps) => LabelledBlock(ValDef(ids.head, tps.head), es.head))
+      case Break(label, tpe, arg) =>
+        (Seq(label.id), NoVariables, Seq(arg), Seq(label.tpe, tpe),
+          (ids, _, es, tps) => Break(ValDef(ids.head, tps(0)), tps(1), es.head))
       case Sequence(expr1, expr2) =>
         (NoIdentifiers, NoVariables, Seq(expr1, expr2), NoTypes,
           (_, _, es, _) => Sequence(es(0), es(1)))

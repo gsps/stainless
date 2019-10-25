@@ -251,8 +251,8 @@ object Trees {
 
   /* == Match-flattened IR == */
 
-  case class LabelledBlock(label: Identifier, body: Expr) extends Expr
-  case class Break(label: Identifier, arg: Expr) extends Expr
+  case class LabelledBlock(label: ValDef, body: Expr) extends Expr
+  case class Break(label: ValDef, tpe: Type, arg: Expr) extends Expr
   case class Sequence(expr1: Expr, expr2: Expr) extends Expr
 
   /* == Type-lowered IR == */

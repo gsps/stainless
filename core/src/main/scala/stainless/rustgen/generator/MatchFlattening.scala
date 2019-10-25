@@ -137,11 +137,12 @@ class MatchFlattening extends IdentityProgramTransformer {
           val scrutVd = ValDef.fresh("scrutinee", mtchAfter.scrutinee.getType, true)
           val stratCases = stratify(scrutVd.toVariable, mtchAfter)
           if (stratCases.exists(_._1.size > 1)) {
-            val labelSuccess = Identifier("mtch", true)
+            val resultTpe = mtch.getType
+            val labelSuccess = ValDef.fresh("mtch", resultTpe, alwaysShowUniqueID = true)
             val newMatches = stratCases
               .map {
                 case (strata, optGuard, rhs) =>
-                  val breakingRhs = Break(labelSuccess, rhs).copiedFrom(rhs)
+                  val breakingRhs = Break(labelSuccess, UnitType(), rhs).copiedFrom(rhs)
                   rebuildStratifiedCase(strata, optGuard, breakingRhs).copiedFrom(mtch)
               }
               .foldRight[Expr](Error(mtchAfter.getType, "Match error")) {
