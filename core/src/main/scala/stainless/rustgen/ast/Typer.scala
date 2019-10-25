@@ -399,7 +399,6 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
   }
 }
 
-// TODO: Factor out the common parts in transform(Expr, Env) with DefinitionTransformer?
 abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
     extends DefinitionTransformer {
   trait EnvWithExpected {
@@ -407,7 +406,6 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
     def withExpected(expectedTpe: Type): Env
   }
   type Env <: EnvWithExpected
-  def initEnv: Env
 
   // NOTE: For the purpose of this transformer we consider NoType as a wildcard, that is,
   // any type other than ErrorType conforms to it.
@@ -426,51 +424,11 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
     ).copiedFrom(fd)
   }
 
-  override def transform(e: Expr, env: Env): Expr = {
-    val (ids, vs, es, tps /*, flags*/, builder) = TreeDeconstructor.deconstruct(e)
-    val envWithoutExpected = env.withExpected(NoType)
-    val expectedTps = getExpectedTypes(e, env.expectedTpe)
-    assert(es.size == expectedTps.size)
+  override def nonExpressionEnv(expr: Expr, env: Env): Env =
+    env.withExpected(noExpectedType)
 
-    var changed = false
-
-    val newIds = for (id <- ids) yield {
-      val newId = transform(id, envWithoutExpected)
-      if (id ne newId) changed = true
-      newId
-    }
-
-    val newVs = for (v <- vs) yield {
-      val vd = v.toVal
-      val newVd = transform(vd, envWithoutExpected)
-      if (vd ne newVd) changed = true
-      newVd.toVariable
-    }
-
-    val newEs = for ((e, expectedTpe) <- es.zip(expectedTps)) yield {
-      val newE = transform(e, env.withExpected(expectedTpe))
-      if (e ne newE) changed = true
-      newE
-    }
-
-    val newTps = for (tp <- tps) yield {
-      val newTp = transform(tp, envWithoutExpected)
-      if (tp ne newTp) changed = true
-      newTp
-    }
-
-    // val newFlags = for (flag <- flags) yield {
-    //   val newFlag = transform(flag, envWithoutExpected)
-    //   if (flag ne newFlag) changed = true
-    //   newFlag
-    // }
-
-    if (changed) {
-      builder(newIds, newVs, newEs, newTps /*, newFlags*/ ).copiedFrom(e)
-    } else {
-      e
-    }
-  }
+  override def expressionEnvs(expr: Expr, subExprs: Seq[Expr], env: Env): Seq[Env] =
+    getExpectedTypes(expr, env.expectedTpe).map(env.withExpected(_))
 
   protected def getExpectedTypes(expr: Expr, expectedTpe: Type): Seq[Type] = {
     expr match {

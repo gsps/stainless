@@ -10,6 +10,13 @@ import Trees._
 trait Transformer {
   type Env
 
+  // Produce the environment for the non-expression parts of a given expression
+  def nonExpressionEnv(expr: Expr, env: Env): Env = env
+
+  // Produce the environments for each of the expression parts of a given expression
+  def expressionEnvs(expr: Expr, subExprs: Seq[Expr], env: Env): Seq[Env] =
+    Seq.fill(subExprs.length)(env)
+
   def transform(id: Identifier, env: Env): Identifier = id
 
   def transform(id: Identifier, tpe: Type, env: Env): (Identifier, Type) = {
@@ -48,35 +55,36 @@ trait Transformer {
   def transform(e: Expr, env: Env): Expr = {
     val (ids, vs, es, tps /*, flags*/, builder) = TreeDeconstructor.deconstruct(e)
 
+    val nonExprEnv = nonExpressionEnv(e, env)
     var changed = false
 
     val newIds = for (id <- ids) yield {
-      val newId = transform(id, env)
+      val newId = transform(id, nonExprEnv)
       if (id ne newId) changed = true
       newId
     }
 
     val newVs = for (v <- vs) yield {
       val vd = v.toVal
-      val newVd = transform(vd, env)
+      val newVd = transform(vd, nonExprEnv)
       if (vd ne newVd) changed = true
       newVd.toVariable
     }
 
-    val newEs = for (e <- es) yield {
-      val newE = transform(e, env)
+    val newEs = for ((e, eEnv) <- es.zip(expressionEnvs(e, es, env))) yield {
+      val newE = transform(e, eEnv)
       if (e ne newE) changed = true
       newE
     }
 
     val newTps = for (tp <- tps) yield {
-      val newTp = transform(tp, env)
+      val newTp = transform(tp, nonExprEnv)
       if (tp ne newTp) changed = true
       newTp
     }
 
     // val newFlags = for (flag <- flags) yield {
-    //   val newFlag = transform(flag, env)
+    //   val newFlag = transform(flag, nonExprEnv)
     //   if (flag ne newFlag) changed = true
     //   newFlag
     // }
