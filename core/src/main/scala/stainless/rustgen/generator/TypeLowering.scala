@@ -18,10 +18,11 @@ import ast.Trees._
  */
 class TypeLowering extends ProgramTransformer {
   class AdtTypeLowering(implicit symbols: Symbols) extends TypedDefinitionTransformer {
-    case class Env(expectedTpe: Type, patBinders: Set[Identifier]) extends EnvWithExpected {
+    case class Env(expectedTpe: Type, patBinders: Set[Identifier], inReceiverPosition: Boolean)
+        extends EnvWithExpected {
       def withExpected(expectedTpe: Type): Env = this.copy(expectedTpe = expectedTpe)
     }
-    def initEnv = Env(noExpectedType, Set.empty)
+    def initEnv = Env(noExpectedType, Set.empty, inReceiverPosition = false)
 
     /* The primary type lowering we are performing in this phase: */
     override def transform(tpe: Type, env: Env): Type = {
@@ -47,17 +48,20 @@ class TypeLowering extends ProgramTransformer {
     }
 
     override def transform(e: Expr, env: Env): Expr = {
-      def adaptToExpectedRef(expr: Expr, expected: Type): Expr = {
+      def adaptToExpectedRef(expr: Expr, env: Env): Expr = {
         val actual = expr.getType
+        val expected = env.expectedTpe
+        val isRecv = env.inReceiverPosition
         (actual, expected) match {
-          case (_, RefType(`actual`))   => Reference(expr).copiedFrom(expr)
-          case (RefType(`expected`), _) => Dereference(expr).copiedFrom(expr)
+          case (_, RefType(`actual`))   => Reference(expr, isImplicit = isRecv).copiedFrom(expr)
+          case (RefType(`expected`), _) => Dereference(expr, isImplicit = isRecv).copiedFrom(expr)
           case _                        => expr
         }
       }
       def adaptAndWrapIfRc(expr: Expr)(wrapper: Expr => Expr): Expr = {
         expr.getType match {
-          case RcType(_)          => wrapper(Reference(expr).copiedFrom(expr)).copiedFrom(expr)
+          case RcType(_) =>
+            wrapper(Reference(expr, isImplicit = true).copiedFrom(expr)).copiedFrom(expr)
           case RefType(RcType(_)) => wrapper(expr).copiedFrom(expr)
           case _                  => expr
         }
@@ -90,29 +94,34 @@ class TypeLowering extends ProgramTransformer {
 
         val unboxed = unboxRcs(expr)
         expr.getType match {
-          case TupleType(_) => Reference(unboxed).copiedFrom(expr)
+          case TupleType(_) => Reference(unboxed, isImplicit = false).copiedFrom(expr)
           case _            => unboxed
         }
       }
 
+      val nextEnv = env.copy(inReceiverPosition = false)
       val eAfter = e match {
-        case v: Variable => adaptAndWrapIfRc(super.transform(v, env))(RcClone)
+        case v: Variable => adaptAndWrapIfRc(super.transform(v, nextEnv))(RcClone)
 
-        case e: Struct => RcNew(super.transform(e, env)).copiedFrom(e)
-        case e: Enum   => RcNew(super.transform(e, env)).copiedFrom(e)
+        case e: Struct => RcNew(super.transform(e, nextEnv)).copiedFrom(e)
+        case e: Enum   => RcNew(super.transform(e, nextEnv)).copiedFrom(e)
+
+        case MethodInvocation(method, recv, args) =>
+          val recvAfter = transform(recv, nextEnv.copy(inReceiverPosition = true))
+          MethodInvocation(method, recvAfter, args.map(transform(_, nextEnv))).copiedFrom(e)
 
         case mtch: MatchExpr =>
-          val newPatBinders = env.patBinders ++ mtch.cases.flatMap(
+          val newPatBinders = nextEnv.patBinders ++ mtch.cases.flatMap(
             cd => cd.pattern.binders.map(_.id)
           )
           val mtchAfter @ MatchExpr(scrutAfter, _) =
-            super.transform(mtch, env.copy(patBinders = newPatBinders)).asInstanceOf[MatchExpr]
+            super.transform(mtch, nextEnv.copy(patBinders = newPatBinders)).asInstanceOf[MatchExpr]
           mtchAfter.copy(scrutinee = adaptScrutinee(scrutAfter)).copiedFrom(mtchAfter)
 
         case _ =>
-          super.transform(e, env)
+          super.transform(e, nextEnv)
       }
-      adaptToExpectedRef(eAfter, env.expectedTpe)
+      adaptToExpectedRef(eAfter, env)
     }
   }
 

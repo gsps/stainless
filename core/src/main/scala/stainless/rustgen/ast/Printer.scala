@@ -373,8 +373,10 @@ ${print(body)(ctx.inner)}
       case Sequence(expr1, expr2)     => p"""$expr1;
 $expr2"""
 
-      case Reference(expr)   => p"(&$expr)"
-      case Dereference(expr) => p"(*$expr)"
+      case Reference(expr, false)   => p"(&$expr)"
+      case Reference(expr, true)    => p"$expr"
+      case Dereference(expr, false) => p"(*$expr)"
+      case Dereference(expr, true)  => p"$expr"
 
       case RcNew(expr)   => p"Rc::new($expr)"
       case RcClone(expr) => p"$expr.clone()"

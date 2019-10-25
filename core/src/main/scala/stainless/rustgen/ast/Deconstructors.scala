@@ -81,12 +81,12 @@ object TreeDeconstructor {
         (NoIdentifiers, NoVariables, Seq(expr1, expr2), NoTypes,
           (_, _, es, _) => Sequence(es(0), es(1)))
 
-      case Reference(expr) =>
+      case Reference(expr, isImplicit) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,
-          (_, _, es, _) => Reference(es.head))
-      case Dereference(expr) =>
+          (_, _, es, _) => Reference(es.head, isImplicit))
+      case Dereference(expr, isImplicit) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,
-          (_, _, es, _) => Dereference(es.head))
+          (_, _, es, _) => Dereference(es.head, isImplicit))
 
       case RcNew(expr) =>
         (NoIdentifiers, NoVariables, Seq(expr), NoTypes,

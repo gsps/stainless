@@ -238,15 +238,15 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       /* Type-lowered IR */
 
       // NOTE: None of the trees below should exist in programs with relaxed typing semantics.
-      // However, during program transformations we may produce such lower-level trees and subsequently
-      // call the high-level program's typer to compute their types.
+      // However, during program transformations we may produce such lower-level trees and
+      // subsequently call the high-level program's typer to compute their types.
 
-      case Reference(expr) =>
+      case Reference(expr, _) =>
         ifWellTyped(expr) { tpe =>
           RefType(tpe)
         }
 
-      case Dereference(arg) =>
+      case Dereference(arg, _) =>
         ifWellTyped(arg) { tpe =>
           ifTypeMatch(tpe, RefType(`?T`), expr) { argTpe =>
             argTpe
@@ -524,12 +524,12 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
 
       /* Type-lowered IR */
 
-      case Reference(_) =>
+      case Reference(_, _) =>
         Seq(expectedTpe match {
           case RefType(tpe) => tpe
           case _            => NoType
         })
-      case Dereference(_) =>
+      case Dereference(_, _) =>
         Seq(expectedTpe match {
           case NoType => NoType
           case _      => RefType(expectedTpe).copiedFrom(expectedTpe)
