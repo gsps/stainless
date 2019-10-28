@@ -178,7 +178,7 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
   }
 
   protected def translateLiteral[T](lit: st.Literal[T]): rt.Literal[T] = {
-    lit match {
+    ((lit match {
       case st.UnitLiteral() =>
         rt.UnitLiteral()
       case st.BooleanLiteral(value) =>
@@ -188,7 +188,7 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
           .asInstanceOf[rt.Literal[T]] // unapply doesn't constrain T here
       case st.StringLiteral(value) =>
         rt.StrLiteral(value)
-    }
+    }) : rt.Literal[T]).copiedFrom(lit)
   }
 
   protected def translateMatch(expr: st.MatchExpr): rt.MatchExpr = {
