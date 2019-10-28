@@ -40,7 +40,7 @@ class MatchFlattening extends IdentityProgramTransformer {
                 ValDef.fresh(subName, subTpe, true)
               }
               val wildcard = WildcardPattern(Some(binder))
-              (wildcard, Seq(binder.toVariable -> subPat))
+              (wildcard, Seq(binder.toVariable -> withoutBinder(subPat)))
 
             case (_, subPat) =>
               (subPat, Seq())
