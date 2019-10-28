@@ -56,6 +56,7 @@ trait MainHelpers extends inox.MainHelpers { self =>
     rustgen.generator.optRustgenPrint -> Description(Rustgen, "Rustgen phases after which to debug-print the program"),
     rustgen.generator.optRustgenPrintTypes -> Description(Rustgen, "Print types of all AST nodes in debug output"),
     rustgen.generator.optRustgenPrintImplicit -> Description(Rustgen, "Print implicit conversions (e.g. autoref) in debug output"),
+    rustgen.generator.optRustgenPrintLibrary -> Description(Rustgen, "Print library stubs in debug output"),
   ) ++ MainHelpers.components.map { component =>
     val option = inox.FlagOptionDef(component.name, default = false)
     option -> Description(Pipelines, component.description)

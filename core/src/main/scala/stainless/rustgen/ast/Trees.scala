@@ -73,8 +73,9 @@ object Trees {
 
   sealed abstract class Flag(val name: String) extends Tree
 
-  object Library extends Flag("library")
-  object RefBinding extends Flag("refBinding")
+  object Library extends Flag("library") // TODO: Rename to `Stub` or `Extern`?
+  object RefBinding extends Flag("refBinding") // unused
+  case class OperatorSymbol(sym: String) extends Flag("operatorSymbol")
 
   /* Definitions */
 
@@ -154,11 +155,13 @@ object Trees {
     case class ArityMismatch(blamed: Tree, expected: TupleType, actual: TupleType)
         extends TypingError
     case class ReturnTypeMismatch(blamed: Tree, expected: Type, actual: Type) extends TypingError
-    case class LetTypeMismatch(blamed: Tree, expected: Type, actual: Type) extends TypingError
     case class ConditionTypeMismatch(blamed: Tree, actual: Type) extends TypingError {
       val expected = BoolType()
     }
     case class MergeTypeMismatch(blamed: Tree, expected: Type, actual: Type) extends TypingError
+    case class PatternBinderMismatch(blamed: ValDef, expected: Type) extends TypingError {
+      val actual = blamed.tpe
+    }
     case class PatternTypeMismatch(blamed: Tree, expected: Type) extends TypingError {
       val actual = NoType
     }
@@ -241,8 +244,22 @@ object Trees {
 
   case class FunctionInvocation(fun: Identifier, args: Seq[Expr]) extends Expr
   case class MethodInvocation(method: Identifier, recv: Expr, args: Seq[Expr]) extends Expr
-  // case class UnaryOperatorInvocation(op: Identifier, arg: Expr) extends Expr
-  // case class BinaryOperatorInvocation(op: Identifier, arg1: Expr, arg2: Expr) extends Expr
+  case class UnaryOperatorInvocation(op: Identifier, arg: Expr) extends Expr
+  case class BinaryOperatorInvocation(op: Identifier, arg1: Expr, arg2: Expr) extends Expr
+
+  sealed case class And(exprs: Seq[Expr]) extends Expr {
+    require(exprs.size >= 2)
+  }
+  object And {
+    def apply(a: Expr, b: Expr): Expr = And(Seq(a, b))
+  }
+
+  sealed case class Or(exprs: Seq[Expr]) extends Expr {
+    require(exprs.size >= 2)
+  }
+  object Or {
+    def apply(a: Expr, b: Expr): Expr = Or(Seq(a, b))
+  }
 
   case class IfExpr(cond: Expr, thenn: Expr, elze: Expr) extends Expr
 

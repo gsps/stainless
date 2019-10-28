@@ -64,6 +64,18 @@ object TreeDeconstructor {
       case MethodInvocation(method, recv, args) =>
         (Seq(method), NoVariables, recv +: args, NoTypes,
           (ids, _, es, _) => MethodInvocation(ids.head, es.head, es.tail))
+      case UnaryOperatorInvocation(op, arg) =>
+        (Seq(op), NoVariables, Seq(arg), NoTypes,
+          (ids, _, es, _) => UnaryOperatorInvocation(ids.head, es.head))
+      case BinaryOperatorInvocation(op, arg1, arg2) =>
+        (Seq(op), NoVariables, Seq(arg1, arg2), NoTypes,
+          (ids, _, es, _) => BinaryOperatorInvocation(ids.head, es(0), es(1)))
+      case And(exprs) =>
+        (NoIdentifiers, NoVariables, exprs, NoTypes,
+          (_, _, es, _) => And(es))
+      case Or(exprs) =>
+        (NoIdentifiers, NoVariables, exprs, NoTypes,
+          (_, _, es, _) => Or(es))
       case IfExpr(cond, thenn, elze) =>
         (NoIdentifiers, NoVariables, Seq(cond, thenn, elze), NoTypes,
           (_, _, es, _) => IfExpr(es(0), es(1), es(2)))

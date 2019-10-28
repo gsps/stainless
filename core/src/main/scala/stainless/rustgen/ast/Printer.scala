@@ -4,9 +4,13 @@ package stainless
 package rustgen
 package ast
 
-import scala.collection.mutable.{ArrayBuffer, StringBuilder}
+import scala.collection.mutable.{ArrayBuffer, Map => MutableMap, StringBuilder}
 
-case class PrinterOptions(val printTypes: Boolean = false, val printImplicit: Boolean = false)
+case class PrinterOptions(
+    printTypes: Boolean = false,
+    printImplicit: Boolean = false,
+    printLibrary: Boolean = false
+)
 object PrinterOptions {
   val default = PrinterOptions()
 }
@@ -175,7 +179,13 @@ class Printer(opts: PrinterOptions)(implicit symbols: Trees.Symbols) {
   import Trees._
   import TypingError._
 
-  private val QUOTE = "\""
+  protected val QUOTE = "\""
+
+  private val opSymCache: MutableMap[Identifier, String] = MutableMap.empty
+  protected def opSym(op: Identifier): String =
+    opSymCache.getOrElseUpdate(op, {
+      symbols.getFunction(op).flags.collectFirst { case OperatorSymbol(sym) => sym }.get
+    })
 
   def show(program: Program): String = {
     print(program)(PrinterContext(this)).toString
@@ -198,21 +208,23 @@ class Printer(opts: PrinterOptions)(implicit symbols: Trees.Symbols) {
   }
 
   def print(program: Program)(implicit ctx: PrinterContext): PrintableChunk = {
-    val Symbols(structs, enums, functions, _) = program.symbols
+    val Symbols(structs, enums, allFunctions, _) = program.symbols
+    val functions =
+      allFunctions.values.toSeq.filter(opts.printLibrary || !_.flags.contains(Library))
     val structsC = nlSeparatedCompact(structs.values.toSeq.map(print), 2)
     val enumsC = nlSeparatedCompact(enums.values.toSeq.map(print), 2)
-    val functionsC = nlSeparatedCompact(functions.values.toSeq.map(print), 2)
+    val functionsC = nlSeparatedCompact(functions.map(print), 2)
     p"""// Stainless-generated module
 #![allow(non_snake_case,unused_parens,unreachable_code,unreachable_patterns)]
-use std::ops::*;
 use std::rc::Rc;
 ${structsC}${enumsC}${functionsC}"""
   }
 
   def print(flag: Flag)(implicit ctx: PrinterContext): PrintableChunk = {
     flag match {
-      case Library    => p"@library"
-      case RefBinding => p"@refBinding"
+      case Library             => p"@library"
+      case RefBinding          => p"@refBinding"
+      case OperatorSymbol(sym) => p"@operatorSymbol($sym)"
     }
   }
 
@@ -275,17 +287,17 @@ ${print(fun.body)(ctx.inner)}
   def print(err: TypingError)(implicit ctx: PrinterContext): PrintableChunk = {
     err match {
       case ArgumentTypeMismatch(blamed, param, actual) =>
-        p"argument type $actual doesn't match parameter $param"
+        p"argument/rhs type $actual doesn't match parameter $param"
       case ArityMismatch(blamed, expected, actual) =>
         p"expected ${expected.tps.size} arguments, but got ${actual.tps.size}"
       case ReturnTypeMismatch(blamed, expected, actual) =>
         p"returned type $actual doesn't match result type $expected"
-      case LetTypeMismatch(blamed, expected, actual) =>
-        p"type $actual doesn't match binding's type $expected"
       case ConditionTypeMismatch(blamed, actual) =>
         p"type $actual doesn't match expected boolean type"
       case MergeTypeMismatch(blamed, expected, actual) =>
         p"branch result type $actual doesn't match expected type $expected"
+      case PatternBinderMismatch(blamed, expected) =>
+        p"pattern binder $blamed doesn't match scrutinee type $expected"
       case PatternTypeMismatch(blamed, expected) =>
         p"pattern $blamed doesn't match scrutinee type $expected"
       case TypeMatchMismatch(blamed, actual, expected) =>
@@ -356,6 +368,13 @@ ${commanlSeparated(cases.map(print(_)(inner)))}
         p"$fun(${commaSeparated(args.map(print))})"
       case MethodInvocation(method, recv, args) =>
         p"$recv.$method(${commaSeparated(args.map(print))})"
+      case UnaryOperatorInvocation(op, arg) =>
+        p"(${opSym(op)}$arg)"
+      case BinaryOperatorInvocation(op, arg1, arg2) =>
+        p"($arg1 ${opSym(op)} $arg2)"
+
+      case And(exprs) => p"(${separated(" && ", exprs.map(print))})"
+      case Or(exprs)  => p"(${separated(" || ", exprs.map(print))})"
 
       case IfExpr(cond, thenn, elze) =>
         p"""if $cond {

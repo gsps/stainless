@@ -18,6 +18,7 @@ object optRustgenPrint extends inox.OptionDef[Set[String]] {
 
 object optRustgenPrintTypes extends inox.FlagOptionDef("rustgen-print-types", false)
 object optRustgenPrintImplicit extends inox.FlagOptionDef("rustgen-print-implicit", false)
+object optRustgenPrintLibrary extends inox.FlagOptionDef("rustgen-print-library", false)
 
 // A stateful processor of Stainless ADTSorts and FunDefs that produces rust trees.
 class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
@@ -27,7 +28,8 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
   val debugPrinterOpts: ast.PrinterOptions = {
     val printTypes = ctx.options.findOptionOrDefault(optRustgenPrintTypes)
     val printImplicit = ctx.options.findOptionOrDefault(optRustgenPrintImplicit)
-    ast.PrinterOptions(printTypes, printImplicit)
+    val printLibrary = ctx.options.findOptionOrDefault(optRustgenPrintLibrary)
+    ast.PrinterOptions(printTypes, printImplicit, printLibrary)
   }
   val printPhases: Set[String] = ctx.options.findOptionOrDefault(optRustgenPrint)
 
@@ -43,23 +45,12 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
           s"    ${fd.id.fullName} @${reason.blamed.getPos}: ${reason.show()}"
         }
         ctx.reporter.internalError(
-          s"Extraction phase produced ill-typed functions:\n${lines.mkString("\n")}\n\n$programStr"
+          s"Phase '$phaseName' produced ill-typed functions:\n${lines.mkString("\n")}\n\n$programStr"
         )
       }
       if (printPhases.contains(phaseName)) {
         ctx.reporter.info(s"--- Program after Rustgen phase $phaseName: ---\n\n$programStr")
       }
-    }
-
-    def trim(program: rt.Program): rt.Program = {
-      val symbols = program.symbols
-      val newSymbols = rt.Symbols(
-        symbols.structs,
-        symbols.enums,
-        symbols.functions.filterNot(_._2.flags.contains(rt.Library)),
-        symbols.strictTyping
-      )
-      rt.Program(newSymbols)
     }
 
     val extraction = new ExtractionPhase(symbols)
@@ -75,6 +66,6 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
     val idiomatizedProgram = new Idiomatization().transform(typeLoweredProgram)
     ensureWellFormed("idiomatization", idiomatizedProgram)
 
-    trim(idiomatizedProgram)
+    idiomatizedProgram
   }
 }

@@ -18,11 +18,15 @@ object RustLibrary {
 
   object ops {
     val add = opName("add")
+    val bitAnd = opName("bitAnd")
+    val bitOr = opName("bitOr")
+    val bitXor = opName("bitXor")
     val div = opName("div")
     val mul = opName("mul")
     val neg = opName("neg")
     val not = opName("not")
     val rem = opName("rem")
+    val shl = opName("shl")
     val sub = opName("sub")
   }
 
@@ -55,19 +59,23 @@ object RustLibrary {
     Seq(
       // mkFunDef(panic.`panic!`, Seq("msg" :: StrType()), NoType),
 
-      binOpDef(ops.add, I32Type(), I32Type(), I32Type()),
-      binOpDef(ops.div, I32Type(), I32Type(), I32Type()),
-      binOpDef(ops.mul, I32Type(), I32Type(), I32Type()),
-      binOpDef(ops.rem, I32Type(), I32Type(), I32Type()),
-      binOpDef(ops.sub, I32Type(), I32Type(), I32Type()),
-      unOpDef(ops.neg, I32Type(), I32Type()),
-      unOpDef(ops.not, I32Type(), I32Type()),
+      binOpDef(ops.add, "+", I32Type(), I32Type(), I32Type()),
+      binOpDef(ops.bitAnd, "&", I32Type(), I32Type(), I32Type()),
+      binOpDef(ops.bitOr, "|", I32Type(), I32Type(), I32Type()),
+      binOpDef(ops.bitXor, "^", I32Type(), I32Type(), I32Type()),
+      binOpDef(ops.div, "/", I32Type(), I32Type(), I32Type()),
+      binOpDef(ops.mul, "*", I32Type(), I32Type(), I32Type()),
+      unOpDef(ops.neg, "-", I32Type(), I32Type()),
+      unOpDef(ops.not, "!", I32Type(), I32Type()),
+      binOpDef(ops.rem, "%", I32Type(), I32Type(), I32Type()),
+      binOpDef(ops.shl, "<<", I32Type(), I32Type(), I32Type()),
+      binOpDef(ops.sub, "-", I32Type(), I32Type(), I32Type()),
 
-      binOpDef(cmp.lt, I32Type() &, I32Type() &, BoolType()),
-      binOpDef(cmp.le, I32Type() &, I32Type() &, BoolType()),
-      binOpDef(cmp.gt, I32Type() &, I32Type() &, BoolType()),
-      binOpDef(cmp.ge, I32Type() &, I32Type() &, BoolType()),
-      binOpDef(cmp.eq, I32Type() &, I32Type() &, BoolType()),
+      binOpDef(cmp.lt, "<", I32Type() &, I32Type() &, BoolType()),
+      binOpDef(cmp.le, "<=", I32Type() &, I32Type() &, BoolType()),
+      binOpDef(cmp.gt, ">", I32Type() &, I32Type() &, BoolType()),
+      binOpDef(cmp.ge, ">=", I32Type() &, I32Type() &, BoolType()),
+      binOpDef(cmp.eq, "==", I32Type() &, I32Type() &, BoolType()),
 
       // mkFunDef(rc.neu, Seq("value" :: NoType), Rc),
       // mkFunDef(rc.klone, Seq("recv" :: (Rc &)), Rc &),
@@ -81,8 +89,8 @@ object RustLibrary {
   private def funName(rustName: String): Identifier = Identifier(rustName)
   private def structName(rustName: String): Identifier = Identifier(rustName)
 
-  private def unOpDef(id: Identifier, op: Type, result: Type): FunDef =
-    mkFunDef(id, Seq("x" :: op), result)
-  private def binOpDef(id: Identifier, lhs: Type, rhs: Type, result: Type): FunDef =
-    mkFunDef(id, Seq("lhs" :: lhs, "rhs" :: rhs), result)
+  private def unOpDef(id: Identifier, sym: String, op: Type, result: Type): FunDef =
+    mkFunDef(id, Seq("x" :: op), result, Seq(OperatorSymbol(sym)))
+  private def binOpDef(id: Identifier, sym: String, lhs: Type, rhs: Type, result: Type): FunDef =
+    mkFunDef(id, Seq("lhs" :: lhs, "rhs" :: rhs), result, Seq(OperatorSymbol(sym)))
 }

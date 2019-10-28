@@ -51,7 +51,12 @@ object DSL {
   }
 
   // (For library stubs)
-  def mkFunDef(id: Identifier, params: Seq[ValDef], returnType: Type): FunDef = {
-    mkFunDef(id, params, returnType, MissingExpr(returnType), Seq(Library))
+  def mkFunDef(
+      id: Identifier,
+      params: Seq[ValDef],
+      returnType: Type,
+      extraFlags: Seq[Flag]
+  ): FunDef = {
+    mkFunDef(id, params, returnType, MissingExpr(returnType), Seq(Library) ++ extraFlags)
   }
 }

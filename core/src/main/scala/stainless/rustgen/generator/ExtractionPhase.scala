@@ -107,6 +107,11 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
   }
 
   protected def translate(expr: st.Expr): rt.Expr = {
+    def unOp(op: Identifier, arg: st.Expr): rt.Expr =
+      rt.UnaryOperatorInvocation(op, translate(arg))
+    def binOp(op: Identifier, lhs: st.Expr, rhs: st.Expr): rt.Expr =
+      rt.BinaryOperatorInvocation(op, translate(lhs), translate(rhs))
+
     (expr match {
       case StainlessError(tpe, reason) =>
         rt.Error(translate(tpe), reason)
@@ -133,35 +138,32 @@ class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {
         assert(tps.isEmpty)
         rt.FunctionInvocation(id, args.map(translate))
 
-      case st.UMinus(expr) =>
-        rt.MethodInvocation(RustLibrary.ops.neg, translate(expr), Seq.empty)
-      case st.Plus(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.ops.add, translate(lhs), Seq(translate(rhs)))
-      case st.Minus(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.ops.sub, translate(lhs), Seq(translate(rhs)))
-      case st.Times(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.ops.mul, translate(lhs), Seq(translate(rhs)))
-      case st.Division(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.ops.div, translate(lhs), Seq(translate(rhs)))
-      case st.Modulo(lhs, rhs) =>
-        ???
-      case st.Remainder(lhs, rhs) =>
-        ???
+      case st.UMinus(arg)         => unOp(RustLibrary.ops.neg, arg)
+      case st.Plus(lhs, rhs)      => binOp(RustLibrary.ops.add, lhs, rhs)
+      case st.Minus(lhs, rhs)     => binOp(RustLibrary.ops.sub, lhs, rhs)
+      case st.Times(lhs, rhs)     => binOp(RustLibrary.ops.mul, lhs, rhs)
+      case st.Division(lhs, rhs)  => binOp(RustLibrary.ops.div, lhs, rhs)
+      case st.Remainder(lhs, rhs) => binOp(RustLibrary.ops.rem, lhs, rhs)
+      case st.Modulo(lhs, rhs)    => ??? // TODO: Use rem_euclid in rust core
 
-      case st.BVNot(expr) =>
-        rt.MethodInvocation(RustLibrary.ops.not, translate(expr), Seq.empty)
-      // ...
+      case st.BVNot(arg)                => unOp(RustLibrary.ops.not, arg)
+      case st.BVAnd(lhs, rhs)           => binOp(RustLibrary.ops.bitAnd, lhs, rhs)
+      case st.BVOr(lhs, rhs)            => binOp(RustLibrary.ops.bitOr, lhs, rhs)
+      case st.BVXor(lhs, rhs)           => binOp(RustLibrary.ops.bitXor, lhs, rhs)
+      case st.BVShiftLeft(lhs, rhs)     => binOp(RustLibrary.ops.shl, lhs, rhs)
+      case st.BVAShiftRight(lhs, rhs)   => ???
+      case st.BVLShiftRight(lhs, rhs)   => ???
+      case st.BVNarrowingCast(lhs, rhs) => ???
+      case st.BVWideningCast(lhs, rhs)  => ???
 
-      case st.LessThan(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.cmp.lt, translate(lhs), Seq(translate(rhs)))
-      case st.LessEquals(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.cmp.le, translate(lhs), Seq(translate(rhs)))
-      case st.GreaterThan(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.cmp.gt, translate(lhs), Seq(translate(rhs)))
-      case st.GreaterEquals(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.cmp.ge, translate(lhs), Seq(translate(rhs)))
-      case st.Equals(lhs, rhs) =>
-        rt.MethodInvocation(RustLibrary.cmp.eq, translate(lhs), Seq(translate(rhs)))
+      case st.LessThan(lhs, rhs)      => binOp(RustLibrary.cmp.lt, lhs, rhs)
+      case st.LessEquals(lhs, rhs)    => binOp(RustLibrary.cmp.le, lhs, rhs)
+      case st.GreaterThan(lhs, rhs)   => binOp(RustLibrary.cmp.gt, lhs, rhs)
+      case st.GreaterEquals(lhs, rhs) => binOp(RustLibrary.cmp.ge, lhs, rhs)
+      case st.Equals(lhs, rhs)        => binOp(RustLibrary.cmp.eq, lhs, rhs)
+
+      case st.And(args) => rt.And(args.map(translate))
+      case st.Or(args)  => rt.Or(args.map(translate))
 
       case st.IfExpr(cond, thenn, elze) =>
         rt.IfExpr(translate(cond), translate(thenn), translate(elze))

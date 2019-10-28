@@ -142,6 +142,16 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
         }
       }
     }
+    def booleanConnective(exprs: Seq[Expr]): Type = {
+      ifWellTyped(exprs) { tps =>
+        (exprs zip tps)
+          .collectFirst {
+            case (expr, tpe) if !conformsTo(tpe, BoolType()) =>
+              ConditionTypeMismatch(expr, tpe).toType
+          }
+          .getOrElse(BoolType())
+      }
+    }
 
     expr match {
       case MissingExpr(tpe) =>
@@ -187,7 +197,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       case Let(vd, value, body) =>
         ifWellTyped(value) { valueTpe =>
           if (!conformsTo(valueTpe, vd.tpe))
-            LetTypeMismatch(expr, vd.tpe, valueTpe).toType
+            ArgumentTypeMismatch(expr, vd, valueTpe).toType
           else
             getType(body)
         }
@@ -198,6 +208,15 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
       case MethodInvocation(method, recv, args) =>
         val fd = symbols.getFunction(method)
         invocation(expr, fd.params, recv +: args, fd.returnType)
+      case UnaryOperatorInvocation(op, arg) =>
+        val fd = symbols.getFunction(op)
+        invocation(expr, fd.params, Seq(arg), fd.returnType)
+      case BinaryOperatorInvocation(op, arg1, arg2) =>
+        val fd = symbols.getFunction(op)
+        invocation(expr, fd.params, Seq(arg1, arg2), fd.returnType)
+
+      case And(exprs) => booleanConnective(exprs)
+      case Or(exprs)  => booleanConnective(exprs)
 
       case IfExpr(cond, thenn, elze) =>
         ifWellTyped(cond) { condTpe =>
@@ -284,7 +303,7 @@ class Typer(_symbols: Trees.Symbols, isStrict: Boolean) {
     ): Option[TypingError] = {
       binder collect {
         case vd if !conformsTo(vd.tpe, scrutTpe) =>
-          Some(LetTypeMismatch(vd, scrutTpe, vd.tpe))
+          Some(PatternBinderMismatch(vd, scrutTpe))
       } getOrElse (rest)
     }
 
@@ -445,11 +464,17 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
         Seq(TupleType(preTps ++ Seq(expectedTpe) ++ postTps))
       case Let(vd, _, _) =>
         Seq(vd.tpe, expectedTpe)
+
       case FunctionInvocation(fun, _) =>
         // TODO: Get TypedFunDef to ensure parameter type are instantiated
         symbols.getFunction(fun).params.map(_.tpe)
       case MethodInvocation(method, _, _) =>
         symbols.getFunction(method).params.map(_.tpe)
+      case UnaryOperatorInvocation(op, _) =>
+        symbols.getFunction(op).params.map(_.tpe)
+      case BinaryOperatorInvocation(op, _, _) =>
+        symbols.getFunction(op).params.map(_.tpe)
+
       case IfExpr(_, _, _) =>
         Seq(BoolType(), expectedTpe, expectedTpe)
 
