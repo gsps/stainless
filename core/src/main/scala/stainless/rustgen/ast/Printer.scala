@@ -271,6 +271,9 @@ ${print(fun.body)(ctx.inner)}
     }
   }
 
+  private def decorateWithType(chunk: PrintableChunk, tpe: => Type)(implicit ctx: PrinterContext) =
+    if (opts.printTypes) p"($chunk : $tpe)" else chunk
+
   private def typeArgs(tps: Seq[Type])(implicit ctx: PrinterContext) =
     ifNonEmpty(tps)(p"::<${commaSeparated(tps.map(print))}>")
 
@@ -401,10 +404,7 @@ $expr2"""
       case RcClone(expr) => p"$expr.clone()"
       case RcAsRef(expr) => p"$expr.as_ref()"
     }
-    if (opts.printTypes)
-      p"($result : ${expr.getType})"
-    else
-      result
+    decorateWithType(result, expr.getType)
   }
 
   def print[T](lit: Literal[T])(implicit ctx: PrinterContext): PrintableChunk = {
@@ -442,7 +442,8 @@ ${print(rhs)(ctx.inner)}
     }
     pat.binder map { vd =>
       val ref = if (vd.flags.contains(RefBinding)) p"ref " else p""
-      p"${ref}${vd.id} @ $chunk"
+      val binderC = p"${ref}${vd.id}"
+      p"${decorateWithType(binderC, vd.tpe)} @ $chunk"
     } getOrElse (chunk)
   }
 }

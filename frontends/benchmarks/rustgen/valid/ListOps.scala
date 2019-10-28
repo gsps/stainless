@@ -37,6 +37,12 @@ object ListOps {
       case _ => Nil()
     }
 
+  def is_sorted(xs: List): Boolean =
+    xs match {
+      case Cons(x, ys @ Cons(y, _)) => x <= y && is_sorted(ys)
+      case _ => true
+    }
+
   def main(): Unit = {
     val xs = Cons(1, Cons(2, Nil()))
     println(length(xs))
@@ -47,5 +53,6 @@ object ListOps {
     val ys = zip_and_add(xs, xs)
     println(length(ys))
     println(head(ys))
+    println(is_sorted(ys))
   }
 }

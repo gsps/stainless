@@ -19,22 +19,27 @@ import ast.Trees._
 class TypeLowering extends ProgramTransformer {
   class AdtTypeLowering(implicit symbols: Symbols) extends TypedDefinitionTransformer {
     /* Environments */
-    case class Env(expectedTpe: Type, patBinders: Set[Identifier], inReceiverPosition: Boolean)
-        extends EnvWithExpected {
+    case class Env(
+        expectedTpe: Type, // the expected type or NoType (see TypedDefinitionTransformer)
+        patBinders: Set[Identifier], // any pattern binders that might be in scope
+        rustcWillAutoAdapt: Boolean, // whether we are in a position where rustc will auto-adapt
+    ) extends EnvWithExpected {
       def withExpected(expectedTpe: Type): Env = this.copy(expectedTpe = expectedTpe)
     }
-    def initEnv = Env(noExpectedType, patBinders = Set.empty, inReceiverPosition = false)
+    def initEnv = Env(noExpectedType, patBinders = Set.empty, rustcWillAutoAdapt = false)
 
     override def nonExpressionEnv(expr: Expr, env: Env): Env =
-      super.nonExpressionEnv(expr, env).copy(inReceiverPosition = false)
+      super.nonExpressionEnv(expr, env).copy(rustcWillAutoAdapt = false)
 
     override def expressionEnvs(expr: Expr, subExprs: Seq[Expr], env: Env): Seq[Env] = {
       val envs = super.expressionEnvs(expr, subExprs, env)
       expr match {
         case MethodInvocation(_, _, _) =>
-          envs.zipWithIndex.map { case (env, i) => env.copy(inReceiverPosition = i == 0) }
+          envs.zipWithIndex.map { case (env, i) => env.copy(rustcWillAutoAdapt = i == 0) }
+        case UnaryOperatorInvocation(_, _) | BinaryOperatorInvocation(_, _, _) =>
+          envs.map(_.copy(rustcWillAutoAdapt = true))
         case _ =>
-          envs.map(_.copy(inReceiverPosition = false))
+          envs.map(_.copy(rustcWillAutoAdapt = false))
       }
     }
 
@@ -65,7 +70,7 @@ class TypeLowering extends ProgramTransformer {
       def adaptToExpectedRef(expr: Expr, env: Env): Expr = {
         val actual = expr.getType
         val expected = env.expectedTpe
-        val isRecv = env.inReceiverPosition
+        val isRecv = env.rustcWillAutoAdapt
         (actual, expected) match {
           case (_, RefType(`actual`))   => Reference(expr, isImplicit = isRecv).copiedFrom(expr)
           case (RefType(`expected`), _) => Dereference(expr, isImplicit = isRecv).copiedFrom(expr)

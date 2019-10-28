@@ -56,6 +56,9 @@ trait Transformer {
     val (ids, vs, es, tps /*, flags*/, builder) = TreeDeconstructor.deconstruct(e)
 
     val nonExprEnv = nonExpressionEnv(e, env)
+    val exprEnvs = expressionEnvs(e, es, env)
+    assert(es.size == exprEnvs.size)
+
     var changed = false
 
     val newIds = for (id <- ids) yield {
@@ -71,7 +74,7 @@ trait Transformer {
       newVd.toVariable
     }
 
-    val newEs = for ((e, eEnv) <- es.zip(expressionEnvs(e, es, env))) yield {
+    val newEs = for ((e, eEnv) <- es.zip(exprEnvs)) yield {
       val newE = transform(e, eEnv)
       if (e ne newE) changed = true
       newE

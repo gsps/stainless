@@ -6,7 +6,7 @@ package generator
 
 import ast.{IdentityProgramTransformer, TreeTransformer}
 import ast.Trees._
-import ast.Deconstructors.{Invocation, PatternBinder}
+import ast.Deconstructors.{PatternBinder}
 
 class MatchFlattening extends IdentityProgramTransformer {
   class MatchFlattener(implicit symbols: Symbols) extends TreeTransformer {

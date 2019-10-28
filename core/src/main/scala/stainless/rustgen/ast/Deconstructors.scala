@@ -296,19 +296,6 @@ object Deconstructors {
     }
   }
 
-  object Invocation {
-    def unapply(e: Expr): Option[(Identifier, Seq[Expr], Seq[Expr] => Expr)] = {
-      e match {
-        case FunctionInvocation(fun, args) =>
-          Some(fun, args, es => FunctionInvocation(fun, es))
-        case MethodInvocation(fun, recv, args) =>
-          Some(fun, recv +: args, es => MethodInvocation(fun, es.head, es.tail))
-        case _ =>
-          None
-      }
-    }
-  }
-
   object PatternBinder {
     def unapply(pat: Pattern): Some[(Option[ValDef], Option[ValDef] => Pattern)] = {
       val (ids, vs, es, tps, pats, recons) = deconstructor.deconstruct(pat)

@@ -475,6 +475,9 @@ abstract class TypedDefinitionTransformer(implicit val symbols: Symbols)
       case BinaryOperatorInvocation(op, _, _) =>
         symbols.getFunction(op).params.map(_.tpe)
 
+      case And(exprs) => Seq.fill(exprs.size)(BoolType())
+      case Or(exprs)  => Seq.fill(exprs.size)(BoolType())
+
       case IfExpr(_, _, _) =>
         Seq(BoolType(), expectedTpe, expectedTpe)
 

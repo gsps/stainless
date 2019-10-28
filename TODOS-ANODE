@@ -1,7 +1,6 @@
 == TODOS
-- Add missing operators (<< >> & ^ | && ||)
-- Pretty-printed operators
 - Smart parenthesization
+- Add right-shift and narrowing/widening operators for bitvectors
 - Standard signed Bitvectors
 - BigInts
 - Proper support for flags on Trees (Inox-parity)
