@@ -1,0 +1,11 @@
+== TODOS
+- Make implicit auto(de)refs visible in debug prints
+- Add missing operators (<< >> & ^ | && ||)
+- Pretty-printed operators
+- Smart parenthesization
+- Standard signed Bitvectors
+- BigInts
+- Proper support for flags on Trees (Inox-parity)
+- Type parametricity (Inox-parity)
+- Lambdas
+- Smart reference counting
