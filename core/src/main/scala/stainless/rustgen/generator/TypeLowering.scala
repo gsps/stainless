@@ -22,7 +22,7 @@ class TypeLowering extends ProgramTransformer {
     case class Env(
         expectedTpe: Type, // the expected type or NoType (see TypedDefinitionTransformer)
         patBinders: Set[Identifier], // any pattern binders that might be in scope
-        rustcWillAutoAdapt: Boolean, // whether we are in a position where rustc will auto-adapt
+        rustcWillAutoAdapt: Boolean // whether we are in a position where rustc will auto-adapt
     ) extends EnvWithExpected {
       def withExpected(expectedTpe: Type): Env = this.copy(expectedTpe = expectedTpe)
     }
@@ -37,6 +37,9 @@ class TypeLowering extends ProgramTransformer {
         case MethodInvocation(_, _, _) =>
           envs.zipWithIndex.map { case (env, i) => env.copy(rustcWillAutoAdapt = i == 0) }
         case UnaryOperatorInvocation(_, _) | BinaryOperatorInvocation(_, _, _) =>
+          // FIXME: This might actually not be correct. Rather, rustc will only implicitly borrow?
+          // Also see [https://doc.rust-lang.org/reference/expressions.html#implicit-borrows] and
+          // [https://stackoverflow.com/questions/28519997/what-are-rusts-exact-auto-dereferencing-rules]
           envs.map(_.copy(rustcWillAutoAdapt = true))
         case _ =>
           envs.map(_.copy(rustcWillAutoAdapt = false))
