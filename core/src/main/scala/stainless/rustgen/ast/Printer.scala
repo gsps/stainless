@@ -419,7 +419,9 @@ $expr2"""
   def print(cse: MatchCase)(implicit ctx: PrinterContext): PrintableChunk = {
     val MatchCase(pattern, optGuard, rhs) = cse
     val optGuardChunk = optGuard.map(guard => p"if $guard").getOrElse(p"")
-    p"${print(pattern)}$optGuardChunk => $rhs"
+    p"""${print(pattern)}$optGuardChunk => {
+${print(rhs)(ctx.inner)}
+}"""
   }
 
   def print(pat: Pattern)(implicit ctx: PrinterContext): PrintableChunk = {
