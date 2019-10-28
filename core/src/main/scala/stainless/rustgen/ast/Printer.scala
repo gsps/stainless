@@ -6,7 +6,7 @@ package ast
 
 import scala.collection.mutable.{ArrayBuffer, StringBuilder}
 
-case class PrinterOptions(val printTypes: Boolean = false)
+case class PrinterOptions(val printTypes: Boolean = false, val printImplicit: Boolean = false)
 object PrinterOptions {
   val default = PrinterOptions()
 }
@@ -336,7 +336,7 @@ ${commanlSeparated(args.map(print(_)(inner)))}
 ${commanlSeparated(fieldChunks)}
 }"""
 
-      case Tuple(exprs) => p"(${commaSeparated(exprs.map(print))})"
+      case Tuple(exprs)                => p"(${commaSeparated(exprs.map(print))})"
       case TupleSelect(expr, index, _) => p"$expr.${index.toString}"
 
       case Let(vd, value, body) =>
@@ -374,9 +374,9 @@ ${print(body)(ctx.inner)}
 $expr2"""
 
       case Reference(expr, false)   => p"(&$expr)"
-      case Reference(expr, true)    => p"$expr"
+      case Reference(expr, true)    => if (opts.printImplicit) p"(imp:&$expr)" else p"$expr"
       case Dereference(expr, false) => p"(*$expr)"
-      case Dereference(expr, true)  => p"$expr"
+      case Dereference(expr, true)  => if (opts.printImplicit) p"(imp:*$expr)" else p"$expr"
 
       case RcNew(expr)   => p"Rc::new($expr)"
       case RcClone(expr) => p"$expr.clone()"

@@ -1,5 +1,4 @@
 == TODOS
-- Make implicit auto(de)refs visible in debug prints
 - Add missing operators (<< >> & ^ | && ||)
 - Pretty-printed operators
 - Smart parenthesization

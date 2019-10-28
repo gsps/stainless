@@ -6,8 +6,18 @@ package generator
 
 object DebugSectionRustgenGenerator extends inox.DebugSection("rustgen-generator")
 
-object optRustgenPrintTypes
-    extends inox.FlagOptionDef("rustgen-print-types", false)
+object optRustgenPrint extends inox.OptionDef[Set[String]] {
+  import inox.OptionParsers._
+
+  val name = "rustgen-print"
+  val default = Set[String]()
+  val parser: OptionParser[Set[String]] = setParser(stringParser)
+
+  val usageRhs = "p1,p2,..."
+}
+
+object optRustgenPrintTypes extends inox.FlagOptionDef("rustgen-print-types", false)
+object optRustgenPrintImplicit extends inox.FlagOptionDef("rustgen-print-implicit", false)
 
 // A stateful processor of Stainless ADTSorts and FunDefs that produces rust trees.
 class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
@@ -16,12 +26,15 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
 
   val debugPrinterOpts: ast.PrinterOptions = {
     val printTypes = ctx.options.findOptionOrDefault(optRustgenPrintTypes)
-    ast.PrinterOptions(printTypes)
+    val printImplicit = ctx.options.findOptionOrDefault(optRustgenPrintImplicit)
+    ast.PrinterOptions(printTypes, printImplicit)
   }
+  val printPhases: Set[String] = ctx.options.findOptionOrDefault(optRustgenPrint)
 
   def apply(sorts: Seq[st.ADTSort], functions: Seq[st.FunDef]): rt.Program = {
-    def checkWellTyped(program: rt.Program) = {
+    def ensureWellFormed(phaseName: String, program: rt.Program) = {
       implicit val symbols: rt.Symbols = program.symbols
+      lazy val programStr = program.show(debugPrinterOpts)
       val illtyped = symbols.typer.checkWellTyped()
       if (illtyped.nonEmpty) {
         val lines = illtyped map { id =>
@@ -29,10 +42,12 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
           val rt.ErrorType(reason) = symbols.typer.getType(fd)
           s"    ${fd.id.fullName} @${reason.blamed.getPos}: ${reason.show()}"
         }
-        val programStr = program.show(debugPrinterOpts)
         ctx.reporter.internalError(
           s"Extraction phase produced ill-typed functions:\n${lines.mkString("\n")}\n\n$programStr"
         )
+      }
+      if (printPhases.contains(phaseName)) {
+        ctx.reporter.info(s"--- Program after Rustgen phase $phaseName: ---\n\n$programStr")
       }
     }
 
@@ -49,16 +64,16 @@ class Generator(ctx: inox.Context, symbols: stainless.trees.Symbols) {
 
     val extraction = new ExtractionPhase(symbols)
     val extractedProgram = extraction(sorts, functions)
-    checkWellTyped(extractedProgram)
+    ensureWellFormed("extraction", extractedProgram)
 
     val matchFlattenedProgram = new MatchFlattening().transform(extractedProgram)
-    checkWellTyped(matchFlattenedProgram)
+    ensureWellFormed("matchFlattening", matchFlattenedProgram)
 
     val typeLoweredProgram = new TypeLowering().transform(matchFlattenedProgram)
-    checkWellTyped(typeLoweredProgram)
+    ensureWellFormed("typeLowering", typeLoweredProgram)
 
     val idiomatizedProgram = new Idiomatization().transform(typeLoweredProgram)
-    checkWellTyped(idiomatizedProgram)
+    ensureWellFormed("idiomatization", idiomatizedProgram)
 
     trim(idiomatizedProgram)
   }
