@@ -4,6 +4,8 @@ package stainless
 package rustgen
 package generator
 
+import ast.RustLibrary
+
 import collection.mutable.{Map => MutableMap}
 
 class ExtractionPhase(_inoxSymbols: stainless.trees.Symbols) {

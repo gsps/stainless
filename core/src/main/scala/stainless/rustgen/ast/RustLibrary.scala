@@ -2,7 +2,7 @@
 
 package stainless
 package rustgen
-package generator
+package ast
 
 // Rust standard symbols
 object RustLibrary {

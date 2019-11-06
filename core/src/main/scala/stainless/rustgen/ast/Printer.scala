@@ -187,6 +187,8 @@ class Printer(opts: PrinterOptions)(implicit symbols: Trees.Symbols) {
       symbols.getFunction(op).flags.collectFirst { case OperatorSymbol(sym) => sym }.get
     })
 
+  /* == Printing entire programs and arbitrary trees == */
+
   def show(program: Program): String = {
     print(program)(PrinterContext(this)).toString
   }
@@ -220,13 +222,7 @@ use std::rc::Rc;
 ${structsC}${enumsC}${functionsC}"""
   }
 
-  def print(flag: Flag)(implicit ctx: PrinterContext): PrintableChunk = {
-    flag match {
-      case Library             => p"@library"
-      case RefBinding          => p"@refBinding"
-      case OperatorSymbol(sym) => p"@operatorSymbol($sym)"
-    }
-  }
+  /* == Printing definitions == */
 
   def print(defn: Definition)(implicit ctx: PrinterContext): PrintableChunk = {
     defn match {
@@ -271,8 +267,81 @@ ${print(fun.body)(ctx.inner)}
     }
   }
 
-  private def decorateWithType(chunk: PrintableChunk, tpe: => Type)(implicit ctx: PrinterContext) =
-    if (opts.printTypes) p"($chunk : $tpe)" else chunk
+  def print(flag: Flag)(implicit ctx: PrinterContext): PrintableChunk = {
+    flag match {
+      case Library             => p"@library"
+      case RefBinding          => p"@refBinding"
+      case OperatorSymbol(sym) => p"@operatorSymbol($sym)"
+    }
+  }
+
+  /* == Conditional parenthesization == */
+
+  private def isComparisonOp(op: Identifier): Boolean = {
+    import RustLibrary._
+    op == cmp.eq /*|| op == cmp.ne*/ || op == cmp.lt || op == cmp.le || op == cmp.gt || op == cmp.ge
+  }
+
+  private def stripImplicit(e: Expr): Expr =
+    if (opts.printImplicit)
+      e
+    else
+      e match {
+        case Reference(arg, true)   => stripImplicit(arg)
+        case Dereference(arg, true) => stripImplicit(arg)
+        case _                      => e
+      }
+
+  // Operator precedence and associativity for the subset of operators we produce.
+  // Also see [https://doc.rust-lang.org/reference/expressions.html#expression-precedence]
+  private def precedence(e: Expr): Int = {
+    import RustLibrary._
+    e match {
+      case _: Variable | _: FunctionInvocation | _: MethodInvocation | _: TupleSelect | _: Tuple |
+          _: Struct | _: Enum | _: Literal[_] | _: RcNew | _: RcClone | _: RcAsRef =>
+        0
+      case UnaryOperatorInvocation(ops.neg | ops.not, _) | _: Reference | _: Dereference => 1
+      case BinaryOperatorInvocation(ops.div | ops.mul | ops.rem, _, _)                   => 2
+      case BinaryOperatorInvocation(ops.add | ops.sub, _, _)                             => 3
+      case BinaryOperatorInvocation(ops.shl /*| ops.shr*/, _, _)                         => 4
+      case BinaryOperatorInvocation(ops.bitAnd, _, _)                                    => 5
+      case BinaryOperatorInvocation(ops.bitXor, _, _)                                    => 6
+      case BinaryOperatorInvocation(ops.bitOr, _, _)                                     => 7
+      case BinaryOperatorInvocation(op, _, _) if isComparisonOp(op)                      => 8
+      case And(_)                                                                        => 9
+      case Or(_)                                                                         => 10
+      case _                                                                             => 11
+    }
+  }
+  private def isLeftAssoc(e: Expr): Boolean = e match {
+    case BinaryOperatorInvocation(op, _, _) if isComparisonOp(op) => false
+    case _                                                        => true
+  }
+  private def isRightAssoc(e: Expr): Boolean = false
+
+  private def unaryOperandNeedsParens(outer: Expr, inner: Expr): Boolean =
+    precedence(outer) < precedence(inner)
+  private def binaryOperandNeedsParens(outer: Expr, inner: Expr, isLeft: Boolean): Boolean = {
+    // Precondition: `outer` is a binary operation
+    val (pOuter, pInner) = (precedence(outer), precedence(inner))
+    if (pOuter < pInner) true
+    else if (pOuter == pInner) isLeft && !isLeftAssoc(outer) || !isLeft && !isRightAssoc(outer)
+    else false
+  }
+
+  private def parens(chunk: PrintableChunk)(implicit ctx: PrinterContext) = p"($chunk)"
+
+  // Add parentheses to operand, if necessary.
+  private def operand(outer: Expr, inner: Expr)(implicit ctx: PrinterContext) =
+    if (unaryOperandNeedsParens(outer, stripImplicit(inner))) parens(print(inner)) else print(inner)
+  private def leftOperand(outer: Expr, inner: Expr)(implicit ctx: PrinterContext) =
+    if (binaryOperandNeedsParens(outer, stripImplicit(inner), isLeft = true)) parens(print(inner))
+    else print(inner)
+  private def rightOperand(outer: Expr, inner: Expr)(implicit ctx: PrinterContext) =
+    if (binaryOperandNeedsParens(outer, stripImplicit(inner), isLeft = false)) parens(print(inner))
+    else print(inner)
+
+  /* == Type arguments and constructors == */
 
   private def typeArgs(tps: Seq[Type])(implicit ctx: PrinterContext) =
     ifNonEmpty(tps)(p"::<${commaSeparated(tps.map(print))}>")
@@ -286,6 +355,12 @@ ${print(fun.body)(ctx.inner)}
     val vari = symbols.getEnumVariant(id)
     p"${genericType(vari.enm, tps)}::$id"
   }
+
+  /* == Printing expressions and types == */
+
+  /* Annotate a chunk with a type for debugging purposes */
+  private def decorateWithType(chunk: PrintableChunk, tpe: => Type)(implicit ctx: PrinterContext) =
+    if (opts.printTypes) p"($chunk : $tpe)" else chunk
 
   def print(err: TypingError)(implicit ctx: PrinterContext): PrintableChunk = {
     err match {
@@ -370,14 +445,16 @@ ${commanlSeparated(cases.map(print(_)(inner)))}
       case FunctionInvocation(fun, args) =>
         p"$fun(${commaSeparated(args.map(print))})"
       case MethodInvocation(method, recv, args) =>
-        p"$recv.$method(${commaSeparated(args.map(print))})"
+        p"${operand(expr, recv)}.$method(${commaSeparated(args.map(print))})"
       case UnaryOperatorInvocation(op, arg) =>
-        p"(${opSym(op)}$arg)"
+        p"${opSym(op)}${operand(expr, arg)}"
       case BinaryOperatorInvocation(op, arg1, arg2) =>
-        p"($arg1 ${opSym(op)} $arg2)"
+        p"${leftOperand(expr, arg1)} ${opSym(op)} ${rightOperand(expr, arg2)}"
 
-      case And(exprs) => p"(${separated(" && ", exprs.map(print))})"
-      case Or(exprs)  => p"(${separated(" || ", exprs.map(print))})"
+      case And(exprs) =>
+        p"${separated(" && ", exprs.map(operand(expr, _)))}"
+      case Or(exprs) =>
+        p"${separated(" || ", exprs.map(operand(expr, _)))}"
 
       case IfExpr(cond, thenn, elze) =>
         p"""if $cond {
@@ -395,14 +472,16 @@ ${print(body)(ctx.inner)}
       case Sequence(expr1, expr2)     => p"""$expr1;
 $expr2"""
 
-      case Reference(expr, false)   => p"(&$expr)"
-      case Reference(expr, true)    => if (opts.printImplicit) p"(imp:&$expr)" else p"$expr"
-      case Dereference(expr, false) => p"(*$expr)"
-      case Dereference(expr, true)  => if (opts.printImplicit) p"(imp:*$expr)" else p"$expr"
+      case Reference(arg, false) => p"&${operand(expr, arg)}"
+      case Reference(arg, true) =>
+        if (opts.printImplicit) p"imp:&${operand(expr, arg)}" else p"$arg"
+      case Dereference(arg, false) => p"*${operand(expr, arg)}"
+      case Dereference(arg, true) =>
+        if (opts.printImplicit) p"imp:*${operand(expr, arg)}" else p"$arg"
 
-      case RcNew(expr)   => p"Rc::new($expr)"
-      case RcClone(expr) => p"$expr.clone()"
-      case RcAsRef(expr) => p"$expr.as_ref()"
+      case RcNew(arg)   => p"Rc::new($arg)"
+      case RcClone(arg) => p"${operand(expr, arg)}.clone()"
+      case RcAsRef(arg) => p"${operand(expr, arg)}.as_ref()"
     }
     decorateWithType(result, expr.getType)
   }
